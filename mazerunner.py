@@ -6,7 +6,7 @@ from atexit import register as atexit_register
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import cached_property
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
@@ -346,53 +346,68 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
+    def check_at_exit(send):
         resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        return isinstance(resp, Exit)
 
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def move_forward(send):
+        """Moves forward one square."""
+        send(Request.Move())
+        while send(Request.CheckMove()).distance < 1:
+            sleep(0.1)
+        send(Request.StopMove())
 
-        for _ in range(4):
-            sleep(1)
+    def can_move_forward(send):
+        resp = send(Request.FrontSensor())
+        return not isinstance(resp, Response.Wall)
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+    def can_move_left(send):
+        resp = send(Request.LeftSensor())
+        return not isinstance(resp, Response.Wall)
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def can_move_right(send):
+        resp = send(Request.RightSensor())
+        return not isinstance(resp, Response.Wall)
 
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def turn(send, direction=1):
+        """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
+        match direction:
+            case Direction.RIGHT:
+                send(Request.TurnRight())
+            case Direction.LEFT:
+                send(Request.TurnLeft())                
+        while send(Request.CheckTurn()).turns < 1:
+            sleep(0.2)
+        send(Request.StopTurn())
 
-        for _ in range(4):
-            sleep(1)
+    class Direction(IntEnum):
+        LEFT = -1
+        RIGHT = 1
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+    with connection(host=args.host, port=args.port) as send:
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        direction = 0
+        position = (0, 0)
 
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        while True:
+            if check_at_exit(send):
+                break
 
-        sleep(1)
+            if can_move_forward(send):
+                logger.info("Moving forward.")
+                move_forward(send)
+            elif can_move_right(send):
+                logger.info("Turning right.")
+                turn(send, direction=Direction.RIGHT)
+            elif can_move_left(send):
+                logger.info("Turning left.")
+                turn(send, direction=Direction.LEFT)
+            else:
+                # Dead-end, so turn around
+                logger.info("Turning around")
+                turn(send, direction=Direction.LEFT)
+                turn(send, direction=Direction.LEFT)
 
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        # If we make it here, we're done
+        logger.info("Sweet release!")
