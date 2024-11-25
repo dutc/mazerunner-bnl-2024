@@ -365,7 +365,7 @@ if __name__ == '__main__':
         # resp = send(req := Request.TurnLeft())
         # logger.info('Request → Response: %16r → %r', req, resp)
         
-        resp = send(req := Request.FrontSensor())
+        resp= send(req := Request.FrontSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
         while isinstance(resp, Message.NoWall):
@@ -373,6 +373,13 @@ if __name__ == '__main__':
             logger.info('Request → Response: %16r → %r', req, resp)
             resp = send(req := Request.CheckMove())
             logger.info('Request → Response: %16r → %r', req, resp)
+            resp = send(req := Request.ExitSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            resp= send(req := Request.FrontSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            # if isinstance(resp, Message.Exit):
+            #     break
+            # break
         # resp = send(req := Request.Move())
 
 
