@@ -347,52 +347,33 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        while (resp := send(req := Request.ExitSensor())) != Response.Exit():
+            logger.info('Request → Response: %16r → %r', req, resp)
+            
+            resp = send(req := Request.TurnRight())
+            logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+            while (resp := send(req := Request.FrontSensor())) != Response.NoWall():
+                logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+                resp = send(req := Request.CheckTurn())
+                logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+                sleep(1)
+
+            resp = send(req := Request.StopTurn())
+            logger.info('Request → Response: %16r → %r', req, resp)    
+            
+            resp = send(req := Request.Move())
+            logger.info('Request → Response: %16r → %r', req, resp)
+
+            sleep(2)
+
+            resp = send(req := Request.CheckMove())
+            logger.info('Request → Response: %16r → %r', req, resp)
+
+            resp = send(req := Request.StopMove())
+            logger.info('Request → Response: %16r → %r', req, resp)
 
         resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
         logger.info('Request → Response: %16r → %r', req, resp)
