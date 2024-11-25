@@ -363,86 +363,48 @@ if __name__ == '__main__':
             proc.join()
         sleep(.1)
 
+
+    def move_unit(client):
+        yield client(Request.Move())
+        resp = client(Request.CheckMove())
+        while resp.distance < 1:
+            yield (resp := client(Request.CheckMove()))
+        yield client(Request.StopMove())
+
+
+    def turn_left(client):
+        yield client(Request.TurnLeft())
+        resp = client(Request.CheckTurn())
+        while resp.turns < 1:
+            yield (resp := client(Request.CheckTurn()))
+        yield client(Request.StopTurn())
+
+
+    def turn_right(client):
+        yield client(Request.TurnRight())
+        resp = client(Request.CheckTurn())
+        while resp < 1:
+            yield (resp := client(Request.CheckTurn()))
+        yield client(Request.StopTurn())
+
+
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
         resp_test = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp_test)
 
         resp_exit = send(req := Request.ExitSensor())
-        while not resp_exit == Message.Exit():
-            resp_move = send(req := Request.Move())
-            logger.info('Request → Response: %16r → %r', req, resp_move)
-
-            sleep(1)
-
-            resp_check = send(req := Request.CheckMove())
-            logger.info('Request → Response: %16r → %r', req, resp_check)
-
-            resp_stop = send(req := Request.StopMove())
-            logger.info('Request → Response: %16r → %r', req, resp_stop)
-
+        while not isinstance(resp_exit, Response.Exit):
+            if not isinstance(send(Request.FrontSensor()), Response.Wall):
+                for move in move_unit(send):
+                    if isinstance(move, Response.Error):
+                        raise Exception
+                    print("Moving...")
+            else:
+                print("Encountered a wall, try turning...")
+                for left in turn_left(send):
+                    print("Turning left...")
             resp_exit = send(req := Request.ExitSensor())
-            logger.info('Request → Response: %16r → %r', req, resp_exit)
 
-    if False:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        print("Maze complete.")
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
