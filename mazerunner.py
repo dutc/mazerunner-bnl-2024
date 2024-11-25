@@ -370,6 +370,9 @@ if __name__ == '__main__':
                         raise Exception('movement error')
             self.send(Request.StopMove())
 
+        def turn_around(self):
+            return self.turn(direction=Request.TurnLeft(), max_turns=2)
+
         def turn_left(self):
             return self.turn(direction=Request.TurnLeft(), max_turns=1)
 
@@ -391,6 +394,10 @@ if __name__ == '__main__':
             resp = self.send(Request.ExitSensor())
             return isinstance(resp, Response.Exit)
 
+        def blocked(self):
+            resp = self.send(Request.FrontSensor())
+            return isinstance(resp, Response.Wall)
+
     ### YOUR WORK HERE ###
     with Robot.from_connection(host=args.host, port=args.port) as rob:
         match args.maze.name:
@@ -407,6 +414,20 @@ if __name__ == '__main__':
                 rob.turn_left()
                 for _ in range(9):
                     rob.move_one()
+            case 'elbow0.mz':
+                for _ in range(3):
+                    rob.move_one()
+                rob.turn_right()
+                for _ in range(3):
+                    rob.move_one()
+            case 'elbow1.mz':
+                rob.turn_around()
+                for _ in range(3):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(3):
+                    rob.move_one()
+
     if rob.escaped():
         logger.info(f'Robot escaped from %s!', args.maze)
     else:
