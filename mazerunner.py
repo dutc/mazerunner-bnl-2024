@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from argparse import ArgumentParser
-from asyncio import run, start_server, TaskGroup, sleep as aio_sleep
+from asyncio import run, gather, start_server, TaskGroup, sleep as aio_sleep
 from atexit import register as atexit_register
 from collections import namedtuple
 from contextlib import contextmanager
@@ -346,53 +346,32 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
+    async def sensor_aggregator(send, req):
+        while True:
+            front_resp = send(Request.FrontSensor())
+            left_resp = send(Request.LeftSensor())
+            right_resp = send(Request.RightSensor())
+            yield {"front": front_resp, "left": left_resp, "right": right_resp}
+            await aio_sleep(1)
+
+    async def movement_controller(send, req):
+        sensor_gen = sensor_aggregator(send, req)
+        while True:
+            sensors = await sensor_gen.__anext__()
+            if sensors["front"] == Response.NoWall():
+                send(Request.Move())
+            elif sensors["left"] == Response.NoWall():
+                send(Request.TurnLeft())
+            elif sensors["right"] == Response.NoWall():
+                send(Request.TurnRight())
+            await aio_sleep(1)
+
     with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        async def main(send, req):
+            await gather(
+                sensor_aggregator(send, req), movement_controller(send, req)
+            )
 
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        run(main(send, Request))
+ 
