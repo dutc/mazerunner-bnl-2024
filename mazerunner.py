@@ -356,4 +356,30 @@ if __name__ == '__main__':
             with connection(host=args.host, port=args.port) as send:
                 yield cls(send=send)
 
+        def move_one(self):
+            return self.move(max_distance=1)
+
+        def move(self, *, max_distance=1):
+            self.send(Request.Move())
+            while True:
+                resp = self.send(Request.CheckMove())
+                match resp:
+                    case Response.MovingState(distance=distance) if distance >= max_distance:
+                        break
+                    case Response.Error():
+                        raise Exception('movement error')
+            self.send(Request.StopMove())
+
+        def escaped(self):
+            resp = self.send(Request.ExitSensor())
+            return isinstance(resp, Response.Exit)
+
     ### YOUR WORK HERE ###
+    with Robot.from_connection(host=args.host, port=args.port) as rob:
+        match args.maze.name:
+            case 'test.mz':
+                rob.move_one()
+    if rob.escaped():
+        logger.info(f'Robot escaped from %s!', args.maze)
+    else:
+        logger.info(f'Robot still trapped in %s!', args.maze)
