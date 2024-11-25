@@ -370,6 +370,23 @@ if __name__ == '__main__':
                         raise Exception('movement error')
             self.send(Request.StopMove())
 
+        def turn_left(self):
+            return self.turn(direction=Request.TurnLeft(), max_turns=1)
+
+        def turn_right(self):
+            return self.turn(direction=Request.TurnRight(), max_turns=1)
+
+        def turn(self, *, direction, max_turns=1):
+            self.send(direction)
+            while True:
+                resp = self.send(Request.CheckTurn())
+                match resp:
+                    case Response.TurningState(turns=turns) if turns >= max_turns:
+                        break
+                    case Response.Error():
+                        raise Exception('turning error')
+            self.send(Request.StopTurn())
+
         def escaped(self):
             resp = self.send(Request.ExitSensor())
             return isinstance(resp, Response.Exit)
@@ -381,6 +398,14 @@ if __name__ == '__main__':
                 rob.move_one()
             case 'linear0.mz':
                 for _ in range(8):
+                    rob.move_one()
+            case 'linear1.mz':
+                rob.turn_right()
+                for _ in range(9):
+                    rob.move_one()
+            case 'linear2.mz':
+                rob.turn_left()
+                for _ in range(9):
                     rob.move_one()
     if rob.escaped():
         logger.info(f'Robot escaped from %s!', args.maze)
