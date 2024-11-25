@@ -365,6 +365,26 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
+        resp_test = send(req := Request.Test())
+        logger.info('Request → Response: %16r → %r', req, resp_test)
+
+        resp_exit = send(req := Request.ExitSensor())
+        while not resp_exit == Message.Exit():
+            resp_move = send(req := Request.Move())
+            logger.info('Request → Response: %16r → %r', req, resp_move)
+
+            sleep(1)
+
+            resp_check = send(req := Request.CheckMove())
+            logger.info('Request → Response: %16r → %r', req, resp_check)
+
+            resp_stop = send(req := Request.StopMove())
+            logger.info('Request → Response: %16r → %r', req, resp_stop)
+
+            resp_exit = send(req := Request.ExitSensor())
+            logger.info('Request → Response: %16r → %r', req, resp_exit)
+
+    if False:
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
