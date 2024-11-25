@@ -381,68 +381,64 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(.5)
 
     ### YOUR WORK HERE ###
+    def move_one(send):
+        send(Request.Move())
+        while True:
+            resp = send(Request.CheckMove())
+            if isinstance(resp, Response.MovingState) and resp.distance == 1:
+                break
+        send(Request.StopMove())
+
+    def move_until_wall(send):
+        send(Request.Move())
+        while True:
+            resp = send(Request.FrontSensor())
+            if isinstance(resp, Response.Wall):
+                break
+            sleep(1)
+        send(Request.StopMove())
+
+    def turn_right_until_no_wall(send):
+        send(Request.TurnRight())
+        while True:
+            resp = send(Request.FrontSensor())
+            if isinstance(resp, Response.Wall):
+                break
+            sleep(1)
+        send(Request.StopTurn())
+
+    def turn_left_until_no_wall(send):
+        send(Request.TurnLeft())
+        while True:
+            resp = send(Request.FrontSensor())
+            if isinstance(resp, Response.Wall):
+                break
+            sleep(1)
+        send(Request.StopTurn())
+
+    def am_i_done(send):
+        resp = send(Request.ExitSensor())
+        return isinstance(resp, Response.Exit)
+
+    def test_gen():
+        yield Request.Test()
+
+    def move_one():
+        yield Request.StartMove()
+        ...  # How to get responses and handle them?
+        yield Request.StopMove()
+
     with connection(host=args.host, port=args.port) as send:
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        while True:
+            move_one(send)
+            if am_i_done(send):
+                print("Exit get!")
+                break
+            else:
+                print("Stuck")
