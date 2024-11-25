@@ -10,7 +10,7 @@ from enum import Enum
 from functools import cached_property
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
-from os import kill
+from os import kill, nice
 from pathlib import Path
 from pickle import loads, dumps
 from random import Random
@@ -20,8 +20,9 @@ from sys import exit
 from textwrap import dedent, indent
 from time import sleep
 from types import SimpleNamespace
+from typing import Callable
 
-from numpy import array, full, ndarray
+from numpy import array, full, isin, ndarray, ravel_multi_index
 
 logger = getLogger(__name__)
 
@@ -314,6 +315,85 @@ def connection(host, port):
         return resp
     yield send
 
+class RobotController:
+    def __init__(self, send: Callable[[Request], Response]) -> None:
+        self._send = send
+
+    def move_to_exit(self) -> None:
+        while not self.at_exit():
+            left, front, _ = self.obstructions()
+            if front:
+                self.move(1)
+            elif left:
+                self.turn_left(1)
+            else:
+                self.turn_right(1)
+
+    def at_exit(self) -> bool:
+        resp = self._do_instruction_and_raise(Request.ExitSensor())
+        return isinstance(resp, Response.Exit)
+
+    def obstructions(self) -> tuple[bool, bool, bool]:
+        left = self._obstruction(Request.LeftSensor())
+        front = self._obstruction(Request.FrontSensor())
+        right = self._obstruction(Request.RightSensor())
+
+        return left, front, right
+
+    def _obstruction(self, req: Request.LeftSensor | Request.FrontSensor | Request.RightSensor) -> bool:
+        resp = self._do_instruction_and_raise(req)
+        return isinstance(resp, Response.NoWall) 
+
+    def move(self, steps: int, poll_period: float = 0.5) -> None:
+        self._do_instruction_and_raise(Request.Move())
+        progress = 0
+        while progress < steps:
+            resp = self._do_instruction(Request.CheckMove())
+            match resp:
+                case Response.MovingState(distance): 
+                    progress += distance
+                case obj: 
+                    raise RuntimeError(obj)
+            sleep(poll_period)
+        self._do_instruction_and_raise(Request.StopMove())
+        if progress > steps:
+            raise RuntimeError("Overshot")
+
+    def turn_left(self, steps: int) -> None:
+        self._turn(Request.TurnLeft(), steps)
+
+    def turn_right(self, steps: int) -> None:
+        self._turn(Request.TurnRight(), steps)
+
+    def _turn(self, req: Request.TurnLeft | Request.TurnRight, steps: int, poll_period: float = 0.5) -> None:
+        self._do_instruction_and_raise(req)
+        progress = 0
+        while progress < steps:
+            resp = self._do_instruction(Request.CheckTurn())
+            match resp:
+                case Response.TurningState(turns): 
+                    progress += turns
+                case obj: 
+                    raise RuntimeError(obj)
+            sleep(poll_period)
+        self._do_instruction_and_raise(Request.StopTurn())
+        if progress > steps:
+            raise RuntimeError("Overshot")
+    
+    def _do_instruction_and_raise(self, req: Request) -> Response:
+        resp = self._do_instruction(req)
+        if isinstance(resp, Response.Error):
+            raise RuntimeError(f"{req} caused an error")
+        else:
+            return resp
+
+    def _do_instruction(self, req: Request) -> Response:
+        resp = send(req)
+        logger.info('Request → Response: %16r → %r', req, resp)
+        return resp
+            
+
+
 parser = ArgumentParser()
 parser.add_argument('--standalone', action='store_true', default=False, help='run mazerunner agent standalone')
 parser.add_argument('--errors', action='store_true', default=False, help='enable errors')
@@ -347,33 +427,5 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
-        while (resp := send(req := Request.ExitSensor())) != Response.Exit():
-            logger.info('Request → Response: %16r → %r', req, resp)
-            
-            resp = send(req := Request.TurnRight())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-            while (resp := send(req := Request.FrontSensor())) != Response.NoWall():
-                logger.info('Request → Response: %16r → %r', req, resp)
-
-                resp = send(req := Request.CheckTurn())
-                logger.info('Request → Response: %16r → %r', req, resp)
-
-                sleep(1)
-
-            resp = send(req := Request.StopTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)    
-            
-            resp = send(req := Request.Move())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-            sleep(2)
-
-            resp = send(req := Request.CheckMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-            resp = send(req := Request.StopMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        controller = RobotController(send)
+        controller.move_to_exit()
