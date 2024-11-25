@@ -324,6 +324,12 @@ parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--tick', type=float, default=1, help='tick speed')
 parser.add_argument('-v', '--verbose', action='count', default=0, help='increase logging verbosity')
 
+
+class EngineState(Enum):
+    STOPPED = 1
+    MOVING = 2
+    TURNING = 3
+
 if __name__ == '__main__':
     args = parser.parse_args()
     basicConfig(level={0: INFO, 1: DEBUG}.get(args.verbose, INFO))
@@ -347,6 +353,124 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
+        state = EngineState.STOPPED
+        while True:
+            # Check if done
+            resp = send(req := Request.ExitSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if resp == Message.Exit():
+                logger.info('Victory!!!!!')
+                break
+
+
+            resp = send(req := Request.CheckMove())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if isinstance(resp, Message.MovingState):
+                #print('here1')
+                state = EngineState.MOVING
+            else:
+                resp = send(req := Request.CheckTurn())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                if isinstance(resp, Message.TurningState):# or isinstance(resp, Message.TurnRight):
+                    state = EngineState.TURNING
+                else:
+                    state = EngineState.STOPPED
+            # If not moving, check state of the environment and respond
+            #if not type(resp) == type(Message.MovingState(1)):
+            logger.info(f'State = {state}')
+
+            if state == EngineState.STOPPED:
+                resp = send(req := Request.FrontSensor())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                if resp == Message.NoWall():
+                    resp = send(req := Request.Move())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                else:
+                    resp = send(req := Request.LeftSensor())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                    if resp == Message.NoWall():
+                        resp = send(req := Request.TurnLeft())
+                        logger.info('Request → Response: %16r → %r', req, resp)
+                    else:
+                        resp = send(req := Request.RightSensor())
+                        logger.info('Request → Response: %16r → %r', req, resp)
+                        if resp == Message.NoWall():
+                            resp = send(req := Request.TurnRight())
+                            logger.info('Request → Response: %16r → %r', req, resp)
+                        else:
+                            resp = send(req := Request.TurnLeft())
+                            logger.info('Request → Response: %16r → %r', req, resp)
+
+            if state == EngineState.TURNING:
+                resp = send(req := Request.FrontSensor())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                if resp == Message.NoWall():
+                    resp = send(req := Request.StopTurn())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                    resp = send(req := Request.Move())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+
+            if state == EngineState.MOVING:
+                resp = send(req := Request.FrontSensor())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                if resp == Message.Wall():
+                    resp = send(req := Request.StopMove())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+
+           #resp = send(req := Request.FrontSensor())
+           #logger.info('Request → Response: %16r → %r', req, resp)
+           #if resp == Message.NoWall():
+           #    resp = send(req := Request.Move())
+           #    logger.info('Request → Response: %16r → %r', req, resp)
+           #else:
+           #    resp = send(req := Request.CheckTurn())
+           #    if not isinstance(resp, Message.TurnLeft):
+           #    #if not type(resp) == type(Message.TurningState(1)):
+           #        resp = send(req := Request.LeftSensor())
+           #        logger.info('Request → Response: %16r → %r', req, resp)
+           #        if resp == Message.NoWall():
+           #            resp = send(req := Request.TurnLeft())
+           #            logger.info('Request → Response: %16r → %r', req, resp)
+           #        else:
+           #            resp = send(req := Request.RightSensor())
+           #            logger.info('Request → Response: %16r → %r', req, resp)
+           #            if resp == Message.NoWall():
+           #                resp = send(req := Request.TurnRight())
+           #                logger.info('Request → Response: %16r → %r', req, resp)
+           #            else:
+           #                resp = send(req := Request.TurnLeft())
+           #                logger.info('Request → Response: %16r → %r', req, resp)
+           #    else:
+           #        resp = send(req := Request.FrontSensor())
+           #        logger.info('Request → Response: %16r → %r', req, resp)
+           #        if resp == Message.NoWall():
+           #            print('Here')
+           #            resp = send(req := Request.StopTurn())
+           #            logger.info('Request → Response: %16r → %r', req, resp)
+           #            resp = send(req := Request.Move())
+           #            logger.info('Request → Response: %16r → %r', req, resp)
+
+            sleep(1)
+
+           # if state == EngineState.STOPPED:
+           #     resp = send(req := Request.FrontSensor())
+           #     logger.info('Request → Response: %16r → %r', req, resp)
+           #
+
+
+           # resp = send(req := Request.CheckMove())
+           # logger.info('Request → Response: %16r → %r', req, resp)
+           #
+           # resp = send(req := Request.CheckMove())
+           # logger.info('Request → Response: %16r → %r', req, resp)
+
+           # if not type(resp) == type(Message.MovingState(1)):
+           #     resp = send(req := Request.Move())
+           #     logger.info('Request → Response: %16r → %r', req, resp)
+
+           # sleep(1)
+
+    if False:
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
