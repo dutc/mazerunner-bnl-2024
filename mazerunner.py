@@ -440,7 +440,35 @@ if __name__ == '__main__':
                 rob.turn_left()
                 for _ in range(3):
                     rob.move_one()
-
+            case 'arbitrary0.mz':
+                rob.turn_right()
+                for _ in range(3):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(3):
+                    rob.move_one()
+                rob.turn_right()
+                for _ in range(4):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(4):
+                    rob.move_one()
+            case 'arbitrary1.mz':
+                rob.turn_around()
+                for _ in range(7):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(4):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(2):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(2):
+                    rob.move_one()
+                rob.turn_right()
+                for _ in range(5):
+                    rob.move_one()
     if rob.escaped():
         logger.info(f'Robot escaped from %s!', args.maze)
     else:
