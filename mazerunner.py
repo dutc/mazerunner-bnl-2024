@@ -362,37 +362,50 @@ if __name__ == '__main__':
         resp = send(req := Request.ExitSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.TurnLeft())
+        # resp = send(req := Request.TurnLeft())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+        
+        resp = send(req := Request.FrontSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+        while isinstance(resp, Message.NoWall):
+            resp = send(req := Request.Move())
             logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+            resp = send(req := Request.CheckMove())
             logger.info('Request → Response: %16r → %r', req, resp)
+        # resp = send(req := Request.Move())
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
         resp = send(req := Request.StopMove())
         logger.info('Request → Response: %16r → %r', req, resp)
+        # for _ in range(4):
+        #     sleep(1)
+
+        #     resp = send(req := Request.CheckTurn())
+        #     logger.info('Request → Response: %16r → %r', req, resp)
+
+        # resp = send(req := Request.StopTurn())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+
+        # resp = send(req := Request.TurnRight())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+
+        # for _ in range(4):
+        #     sleep(1)
+
+        #     resp = send(req := Request.CheckTurn())
+        #     logger.info('Request → Response: %16r → %r', req, resp)
+
+        # resp = send(req := Request.StopTurn())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+
+        # resp = send(req := Request.Move())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+
+        # sleep(1)
+
+        # resp = send(req := Request.CheckMove())
+        # logger.info('Request → Response: %16r → %r', req, resp)
+
+        # resp = send(req := Request.StopMove())
+        # logger.info('Request → Response: %16r → %r', req, resp)
