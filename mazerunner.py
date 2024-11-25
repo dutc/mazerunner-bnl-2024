@@ -427,6 +427,19 @@ if __name__ == '__main__':
                 rob.turn_left()
                 for _ in range(3):
                     rob.move_one()
+            case 'tjunction0.mz':
+                for _ in range(5):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(3):
+                    rob.move_one()
+            case 'tjunction1.mz':
+                rob.turn_right()
+                for _ in range(5):
+                    rob.move_one()
+                rob.turn_left()
+                for _ in range(3):
+                    rob.move_one()
 
     if rob.escaped():
         logger.info(f'Robot escaped from %s!', args.maze)
