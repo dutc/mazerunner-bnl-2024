@@ -312,7 +312,8 @@ def connection(host, port):
         if not isinstance(resp, Response):
             raise TypeError(f'resp must be of type {Response} was {type(resp)}')
         return resp
-    yield send
+    try: yield send
+    finally: pass
 
 parser = ArgumentParser()
 parser.add_argument('--standalone', action='store_true', default=False, help='run mazerunner agent standalone')
@@ -343,56 +344,16 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(.5)
+
+    @dataclass
+    class Robot:
+        send : ...
+
+        @classmethod
+        @contextmanager
+        def from_connection(cls, *, host, port):
+            with connection(host=args.host, port=args.port) as send:
+                yield cls(send=send)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
