@@ -343,56 +343,75 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(.5)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
+    def turn_right(send):
         resp = send(req := Request.TurnRight())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        for _ in range(4):
+    def turn_left(send):
+        resp = send(req := Request.TurnLeft())
+        logger.info('Request → Response: %16r → %r', req, resp)
+        
+    def turn_left_until_no_wall(send):
+        turn_left(send)
+        resp = send(req := Request.FrontSensor())
+        logger.info('Request → Response: %16r → %r', req, resp)
+        while isinstance(resp, Response.Wall):
             sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
+            resp = send(req := Request.FrontSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)       
+        resp = send(req := Request.StopTurn())
+        logger.info('Request → Response: %16r → %r', req, resp)
+        
+    def turn_right_until_no_wall(send):
+        turn_right(send)
+        resp = send(req := Request.FrontSensor())
+        logger.info('Request → Response: %16r → %r', req, resp)
+        while isinstance(resp, Response.Wall):
+            sleep(1)
+            resp = send(req := Request.FrontSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)       
         resp = send(req := Request.StopTurn())
         logger.info('Request → Response: %16r → %r', req, resp)
 
+    def solve_maze(send):
         resp = send(req := Request.Move())
         logger.info('Request → Response: %16r → %r', req, resp)
+        while True:
+            sleep(1)
+            resp = send(req := Request.CheckMove())
+            logger.info('Request → Response: %16r → %r', req, resp)
 
-        sleep(1)
+            resp = send(req := Request.ExitSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if isinstance(resp, Response.Exit):
+                break
 
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
+            resp = send(req := Request.RightSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if isinstance(resp, Response.NoWall):
+                resp = send(req := Request.StopMove())
+                logger.info('Request → Response: %16r → %r', req, resp)        
+                turn_right_until_no_wall(send)
+                resp = send(req := Request.Move())
+                logger.info('Request → Response: %16r → %r', req, resp)
+            else:
+                resp = send(req:= Request.FrontSensor())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                if isinstance(resp, Response.Wall):
+                    resp = send(req := Request.StopMove())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                    turn_left_until_no_wall(send)
+                    resp = send(req := Request.Move())
+                    logger.info('Request → Response: %16r → %r', req, resp)
         resp = send(req := Request.StopMove())
+        logger.info('Request → Response: %16r → %r', req, resp)        
+    
+    with connection(host=args.host, port=args.port) as send:
+        resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
+        #turn_right_until_no_wall(send)
+        solve_maze(send)
+        
