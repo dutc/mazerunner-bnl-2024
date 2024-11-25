@@ -346,34 +346,57 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
+
     with connection(host=args.host, port=args.port) as send:
-        while (resp := send(req := Request.ExitSensor())) != Response.Exit():
+        def generic_instruction(req):
+            resp = send(req)
             logger.info('Request → Response: %16r → %r', req, resp)
-            
-            resp = send(req := Request.TurnRight())
-            logger.info('Request → Response: %16r → %r', req, resp)
+            return resp
 
-            while (resp := send(req := Request.FrontSensor())) != Response.NoWall():
-                logger.info('Request → Response: %16r → %r', req, resp)
+        def move_steps(steps):
+            generic_instruction(Request.Move())
+            while resp:= generic_instruction(Request.CheckMove()):
+                sleep(0.5)
+                if isinstance(resp, Response.MovingState):
+                    if resp.distance == steps:
+                        generic_instruction(Request.StopMove())
+                        return
+                    elif resp.distance >= steps:
+                        generic_instruction(Request.StopMove())
+                        logger.error(f"went past our desired distance!")
+                        return
+                else:
+                    logger.error(f"unexpected state: {resp}")
+                    return
 
-                resp = send(req := Request.CheckTurn())
-                logger.info('Request → Response: %16r → %r', req, resp)
 
-                sleep(1)
+        def turn_steps(direction:Request.TurnLeft|Request.TurnRight, steps):
+            generic_instruction(direction)
+            while resp:= generic_instruction(Request.CheckTurn()):
+                sleep(0.5)
+                if isinstance(resp, Response.TurningState):
+                    if resp.turns == steps:
+                        generic_instruction(Request.StopTurn())
+                        return
+                    elif resp.turns >= steps:
+                        generic_instruction(Request.StopTurn())
+                        logger.error(f"went past our desired turn!")
+                        return
+                else:
+                    logger.error(f"unexpected state: {resp}")
+                    return
 
-            resp = send(req := Request.StopTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)    
-            
-            resp = send(req := Request.Move())
-            logger.info('Request → Response: %16r → %r', req, resp)
+        def can_move_forward():
+            resp = generic_instruction(Request.FrontSensor())
+            return isinstance(resp, Response.NoWall)
 
-            sleep(2)
 
-            resp = send(req := Request.CheckMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
+        def at_exit():
+            resp = generic_instruction(Request.ExitSensor())
+            return isinstance(resp, Response.Exit)
 
-            resp = send(req := Request.StopMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        while not at_exit():
+            while not can_move_forward():
+                turn_steps(Request.TurnLeft(), 1)
+            move_steps(1)
