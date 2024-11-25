@@ -350,37 +350,50 @@ if __name__ == '__main__':
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
+        resp_front = send(req := Request.FrontSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.LeftSensor())
+        resp_left = send(req := Request.LeftSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
+        resp_right = send(req := Request.RightSensor())
         logger.info('Request → Response: %16r → %r', req, resp)
 
         # resp = send(req := Request.TurnLeft())
         # logger.info('Request → Response: %16r → %r', req, resp)
         
-        resp= send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        resp_exit = send(req := Request.ExitSensor())
+        while isinstance(resp_exit, Message.NoExit):
+            # resp_stop = send(req := Request.StopMove())
+            resp_exit = send(req := Request.ExitSensor())
 
-        while isinstance(resp, Message.NoWall):
-            resp = send(req := Request.Move())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            resp = send(req := Request.CheckMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            resp = send(req := Request.ExitSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            resp= send(req := Request.FrontSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            # if isinstance(resp, Message.Exit):
-            #     break
-            # break
-        # resp = send(req := Request.Move())
+            if isinstance(resp_front, Message.NoWall):
+                print("Front")
+                resp = send(req := Request.StopTurn())
+                resp = send(req := Request.Move())
+                resp = send(req := Request.CheckMove())
+                logger.info('Request → Response: %16r → %r', req, resp)
+                resp_front= send(req := Request.FrontSensor())
+        
+            if isinstance(resp_front, Message.Wall):
+                if isinstance(resp_left, Message.NoWall):
+                    resp = send(req := Request.StopMove())
+                    print("Left")
+                    resp = send(req := Request.TurnLeft())
+                    resp = send(req := Request.CheckTurn())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                    resp_front= send(req := Request.FrontSensor())
+                    resp_left = send(req := Request.LeftSensor())
+
+                elif isinstance(resp_right, Message.NoWall):
+                    resp = send(req := Request.StopMove())
+                    print("Right")
+                    resp = send(req := Request.TurnRight())
+                    resp = send(req := Request.CheckTurn())
+                    logger.info('Request → Response: %16r → %r', req, resp)
+                    resp_front= send(req := Request.FrontSensor())
+                    resp_right = send(req := Request.RightSensor())
+
 
 
         resp = send(req := Request.StopMove())
@@ -397,11 +410,12 @@ if __name__ == '__main__':
         # resp = send(req := Request.TurnRight())
         # logger.info('Request → Response: %16r → %r', req, resp)
 
-        # for _ in range(4):
-        #     sleep(1)
+            # for _ in range(4):
+            #     sleep(1)
 
-        #     resp = send(req := Request.CheckTurn())
-        #     logger.info('Request → Response: %16r → %r', req, resp)
+            #     resp = send(req := Request.CheckTurn())
+            #     logger.info('Request → Response: %16r → %r', req, resp)
+
 
         # resp = send(req := Request.StopTurn())
         # logger.info('Request → Response: %16r → %r', req, resp)
