@@ -379,6 +379,9 @@ if __name__ == '__main__':
         match args.maze.name:
             case 'test.mz':
                 rob.move_one()
+            case 'linear0.mz':
+                for _ in range(8):
+                    rob.move_one()
     if rob.escaped():
         logger.info(f'Robot escaped from %s!', args.maze)
     else:
