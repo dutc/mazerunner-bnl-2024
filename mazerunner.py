@@ -372,16 +372,22 @@ if __name__ == '__main__':
                 resp = send(req := Request.StopTurn())
                 resp = send(req := Request.Move())
                 resp = send(req := Request.CheckMove())
-                logger.info('Request → Response: %16r → %r', req, resp)
+                # logger.info('Request → Response: %16r → %r', req, resp)
                 resp_front= send(req := Request.FrontSensor())
         
             if isinstance(resp_front, Message.Wall):
+                print("here")
+                resp_right = send(req := Request.RightSensor())
+                logger.info('Request → Response: %16r → %r', req, resp_right)
+                resp_left = send(req := Request.LeftSensor())
+                logger.info('Request → Response: %16r → %r', req, resp_left)
+
                 if isinstance(resp_left, Message.NoWall):
                     resp = send(req := Request.StopMove())
                     print("Left")
                     resp = send(req := Request.TurnLeft())
                     resp = send(req := Request.CheckTurn())
-                    logger.info('Request → Response: %16r → %r', req, resp)
+                    # logger.info('Request → Response: %16r → %r', req, resp)
                     resp_front= send(req := Request.FrontSensor())
                     resp_left = send(req := Request.LeftSensor())
 
@@ -390,10 +396,18 @@ if __name__ == '__main__':
                     print("Right")
                     resp = send(req := Request.TurnRight())
                     resp = send(req := Request.CheckTurn())
-                    logger.info('Request → Response: %16r → %r', req, resp)
+                    # logger.info('Request → Response: %16r → %r', req, resp)
                     resp_front= send(req := Request.FrontSensor())
                     resp_right = send(req := Request.RightSensor())
 
+                elif isinstance(resp_right, Message.Wall) and isinstance(resp_left, Message.Wall):
+                    resp = send(req := Request.StopMove())
+                    print("test")
+                    resp = send(req := Request.TurnRight())
+                    resp = send(req := Request.CheckTurn())
+                    # logger.info('Request → Response: %16r → %r', req, resp)
+                    resp_front= send(req := Request.FrontSensor())
+                    resp_right = send(req := Request.RightSensor())
 
 
         resp = send(req := Request.StopMove())
