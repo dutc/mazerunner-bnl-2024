@@ -330,6 +330,70 @@ class EngineState(Enum):
     MOVING = 2
     TURNING = 3
 
+def check_environment(send, order = None, stop_early = False):
+    resp = send(req := Request.ExitSensor())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    if resp == Message.Exit():
+        logger.info('Victory!!!!!')
+        return {'Exit': True}
+    calls = {
+        'Straight': Request.FrontSensor,
+        'Left'    : Request.LeftSensor,
+        'Right'   : Request.RightSensor
+    }
+    if order == None:
+        order = ['Straight', 'Left', 'Right']
+    retval = {}
+    for a in order:
+        resp = send(req := calls[a]())
+        logger.info('Request → Response: %16r → %r', req, resp)
+        retval[a] = resp
+        if stop_early and resp == Message.NoWall():
+            return retval
+    return retval
+
+
+class Robot_Actions(Enum):
+    Go_Straight: 1
+    Turn_Left: 2
+    Turn_Right: 3
+    Stop_Move: 4
+    Stop_Turn: 5
+    Continue: 6
+
+
+def left_wall_hugger_bot():
+    system_state = EngineState.STOPPED
+    while True:
+        if system_state == EngineState.STOPPED:
+            environment = yield EngineState.STOPPED
+            if environment["Left"] == Message.NoWall:
+                _ = yield Robot_Actions.Turn_Left
+                system_state = EngineState.TURNING
+            elif environment["Straight"] == Message.NoWall:
+                _ = yield Robot_Actions.Go_Straight
+                system_state = EngineState.MOVING
+            elif environment["Right"] == Message.NoWall:
+                _ = yield Robot_Actions.Turn_Right
+                system_state = EngineState.TURNING
+            else:
+                _ = yield Robot_Actions.Turn_Left
+                system_state = EngineState.TURNING
+        if system_state == EngineState.MOVING:
+            while environment["Left"] != Message.NoWall:
+                environment = yield EngineState.MOVING
+                if environment["Straight"] == Message.Wall:
+                    _ = yield Robot_Actions.Stop_Move
+                    system_state = EngineState.STOPPED
+                    break
+                else:
+                    _ = yield Robot_Actions.Continue
+        else:
+            while environment["Straight"] == Message.Wall:
+
+
+
+
 if __name__ == '__main__':
     args = parser.parse_args()
     basicConfig(level={0: INFO, 1: DEBUG}.get(args.verbose, INFO))
@@ -350,6 +414,9 @@ if __name__ == '__main__':
             kill(proc.pid, SIGTERM)
             proc.join()
         sleep(.1)
+
+
+
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
