@@ -347,111 +347,87 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
 
+    from functools import wraps
 
-    def move(send, n_steps=None, refresh_rate=1.0):
-        """Move until you reach a wall"""
+    def pumped(coro):
+        @wraps(coro)
+        def inner(*args, **kwargs):
+            ci = coro(*args, **kwargs)
+            next(ci)
+            return ci
+        return inner
+
+    def check_exit():
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
+    
+    def check_wall():
+        resp = yield Request.FrontSensor()
+        return isinstance(resp, Response.Wall)
+
+    # @pumped
+    def move(n_steps=None):
+        """Move for a number of steps or until you reach a wall"""
         pos = 0
-        moving = False
+        if n_steps == pos:
+            return pos
 
+        resp = yield Request.Move()
         while True:
-            resp = send(req := Request.ExitSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
+            resp = yield Request.CheckMove()
+            pos = resp.distance
+            if (n_steps is not None) and (pos >= n_steps):
+                yield Request.StopMove()
+                break
 
-            if isinstance(resp, Response.Exit):
-                logger.info("Reached the Exit!")
-                return pos, True
-
-            resp = send(req := Request.FrontSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-            if isinstance(resp, Response.NoWall):
-                if not moving:
-                    moving = True
-                    resp = send(req := Request.Move())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-
-                sleep(refresh_rate)
-
-                resp = send(req := Request.CheckMove())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                pos = resp.distance
-
-                if pos == n_steps:
-                    resp = send(req := Request.StopMove())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-
-                    logger.info(f"Made {pos} steps and stopped")
-                    
-                    resp = send(req := Request.ExitSensor())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-
-                    if isinstance(resp, Response.Exit):
-                        logger.info("Reached the Exit!")
-                        return pos, True
-                    else:
-                        return pos, False
-            else:
-                if moving:
-                    resp = send(req := Request.StopMove())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-                logger.info(f"Reached the wall after {pos} steps")
-                
-                resp = send(req := Request.ExitSensor())
-                logger.info('Request → Response: %16r → %r', req, resp)
-
-                if isinstance(resp, Response.Exit):
-                    logger.info("Reached the Exit!")
-                    return pos, True
-                else:
-                    return pos, False
-
-    def turn(send, n_turns=None, direction='left', refresh_rate=1):
-        """Turn until the front sensor is clear"""
-        pos = 0
-        turning = False
-
-        while True:
-            resp = send(req := Request.FrontSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
+            resp = yield Request.FrontSensor()
             if isinstance(resp, Response.Wall):
-                if not turning:
-                    turning = True
-                    resp = send(req := (Request.TurnLeft() if direction == 'left' else Request.TurnRight()) )
-                    logger.info('Request → Response: %16r → %r', req, resp)
+                yield Request.StopMove()
+                break
+        
+        return pos
+    
+    def turn(n_turns=None, direction='left'):
+        """Turn for a number of turns or until the front sensor is clear"""
+        pos = 0
+        if n_turns == pos:
+            return pos
 
-                sleep(refresh_rate)
+        resp = yield Request.TurnLeft() if direction == 'left' else Request.TurnRight()
+        while True:
+            resp = yield Request.CheckTurn()
+            pos = resp.turns
+            if (n_turns is not None) and (pos == n_turns):
+                yield Request.StopTurn()
+                break
 
-                resp = send(req := Request.CheckTurn())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                pos = resp.turns
+            resp = yield Request.FrontSensor()
+            if (pos != 2) and isinstance(resp, Response.NoWall):
+                yield Request.StopTurn()
+                break
+        
+        return pos
 
-                if pos == n_turns:
-                    resp = send(req := Request.StopTurn())
-                    logger.info('Request → Response: %16r → %r', req, resp)
+    def plan():
+        if (yield from check_exit()):
+            return "We are done here!"
+        while True:
+            # Move forward by 1 step
+            pos = yield from move(1)
 
-                    resp = send(req := Request.FrontSensor())
-                    logger.info('Request → Response: %16r → %r', req, resp)
+            if (yield from check_exit()):
+                return "We are done here!"
 
-                    logger.info(f"Made {pos} turns and stopped")
-                    return pos, isinstance(resp, Response.NoWall)
+            # If couldn't move -- turn (as much as possible)
+            if pos == 0:
+               yield from turn()
             else:
-                if turning:
-                    resp = send(req := Request.CheckTurn())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-                    pos = resp.turns
-
-                    if pos != 2:
-                        # Don't turn back
-                        resp = send(req := Request.StopTurn())
-                        logger.info('Request → Response: %16r → %r', req, resp)
-                        logger.info(f"Reached an open path after {pos} turns")
-                        return pos, True
-                    else:
-                        sleep(refresh_rate)
+                # Try turning left and move there if possible, otherwise continue straight
+                yield from turn(1, direction = 'left')
+                if (yield from check_wall()):
+                    yield from turn(1, direction = 'right')
                 else:
-                    logger.info(f"Reached an open path after {pos} turns")
-                    return pos, True
+                    continue
 
 
     with connection(host=args.host, port=args.port) as send:
@@ -459,18 +435,16 @@ if __name__ == '__main__':
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
+        plan = plan()
+        resp = None
         while True:
-            # Move forward by 1 step
-            pos, is_exit = move(send, 1)
-            if is_exit:
+            try:
+                resp = send(req := plan.send(resp))
+                logger.info('Request    →   Response: %16r → %r', req, resp)
+                if isinstance(resp, Response.Error):
+                    print("Caught an Error in plan.")
+                    break
+                sleep(args.tick/5)
+            except StopIteration as e:
+                print(f"Finish! {e}")
                 break
-            # If couldn't move -- turn (as much as possible)
-            if pos == 0:
-                turn(send)
-            else:
-                # Try turning left and move there if possible, otherwise continue straight
-                pos, is_open = turn(send, 1, direction = 'left')
-                if is_open:
-                    continue
-                else:
-                    turn(send, 1, direction = 'right')
