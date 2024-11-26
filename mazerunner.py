@@ -428,11 +428,11 @@ if __name__ == '__main__':
 
 
     class RobotState():
-        def __init__(self, x=0, y=0, turns=-1, face="up", reverse_turn=False):
+        def __init__(self, x=0, y=0, reverse_turn=False):
             self.x = x
             self.y = y
             self.turning = "left"
-            self.turns_history = [turns]
+            self.turns_history = [0]
             self.visited = set()
             self.reverse_turn = reverse_turn
             self._directions = directions()
@@ -475,7 +475,7 @@ if __name__ == '__main__':
 
         def backtrack(self):
             if not self.turns_history:
-                print("Cannot backtrack from starting point!")
+                print("Cannot backtrack further than the starting point!")
             elif self.turns_history:
                 self.turns_history.pop()
 
