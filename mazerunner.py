@@ -345,54 +345,35 @@ if __name__ == '__main__':
             proc.join()
         sleep(.1)
 
-    ### YOUR WORK HERE ###
+
+    from functools import wraps
+
+    def pumped(coro):
+        @wraps(coro)
+        def inner(*args, **kwargs):
+            f=coro(*args, **kwargs)
+            next(f)
+            return f
+        return inner
+
     with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        @pumped
+        def linear_plan():
+            _ = yield
+            resp = yield Request.Move()
+            while True:
+                resp = yield Request.ExitSensor()
+                if resp != Response.Exit():
+                    sleep(0.5)
+                else:
+                    break
+            yield Request.StopMove()
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        response = None
+        ci = linear_plan()
+        while True:
+            try:
+                cmd = ci.send(response)
+                response = send(cmd)
+            except StopIteration:
+                break # done
