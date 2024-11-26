@@ -457,17 +457,19 @@ if __name__ == '__main__':
                 yield Request.CheckMove()
 
         def execute(instructions):
-            instruction = next(instructions)
+            resp = None
+            instruction = None
             while True:
                 try:
+                    instruction = instructions.send(resp)
                     match instruction:
                         case Request():
                             resp = send(instruction)
                             logger.info('Request → Response: %16r → %r', instruction, resp)
-                            instruction = instructions.send(resp)
                         case Sleep(duration):
                             sleep(duration)
-                            instruction = next(instructions)
+                            instruction = None
+                            resp = None
                         case _:
                             raise RuntimeError()
                 except StopIteration:
