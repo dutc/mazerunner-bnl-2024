@@ -422,9 +422,7 @@ if __name__ == '__main__':
             while True:
                 for direction, value in rotation.items():
                     if reversing is True:
-                        if previous == direction:
-                            reversing = False
-                        else:
+                        if (reversing := previous != direction):
                             continue
                     previous = direction
                     reverse = yield direction, value
@@ -435,10 +433,8 @@ if __name__ == '__main__':
                     break
             while True:
                 for direction, value in reversed(rotation.items()):
-                    if reverse is True:
-                        if previous == direction:
-                            reversing = False
-                        else:
+                    if reversing is True:
+                        if (reversing := previous != direction):
                             continue
                     previous = direction
                     reverse = yield direction, value
