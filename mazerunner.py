@@ -343,56 +343,108 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(.5)
 
     ### YOUR WORK HERE ###
+
+    from functools import wraps
+
+    def pumped(coro):
+        @wraps(coro)
+        def inner(*args, **kwargs):
+            ci = coro(*args, **kwargs)
+            next(ci)
+            return ci
+        return inner
+
+    def check_exit():
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
+    
+    def check_wall():
+        resp = yield Request.FrontSensor()
+        return isinstance(resp, Response.Wall)
+
+    # @pumped
+    def move(n_steps=None):
+        """Move for a number of steps or until you reach a wall"""
+        pos = 0
+        if n_steps == pos:
+            return pos
+
+        resp = yield Request.Move()
+        while True:
+            resp = yield Request.CheckMove()
+            pos = resp.distance
+            if (n_steps is not None) and (pos >= n_steps):
+                yield Request.StopMove()
+                break
+
+            resp = yield Request.FrontSensor()
+            if isinstance(resp, Response.Wall):
+                yield Request.StopMove()
+                break
+        
+        return pos
+    
+    def turn(n_turns=None, direction='left'):
+        """Turn for a number of turns or until the front sensor is clear"""
+        pos = 0
+        if n_turns == pos:
+            return pos
+
+        resp = yield Request.TurnLeft() if direction == 'left' else Request.TurnRight()
+        while True:
+            resp = yield Request.CheckTurn()
+            pos = resp.turns
+            if (n_turns is not None) and (pos == n_turns):
+                yield Request.StopTurn()
+                break
+
+            resp = yield Request.FrontSensor()
+            if (pos != 2) and isinstance(resp, Response.NoWall):
+                yield Request.StopTurn()
+                break
+        
+        return pos
+
+    def plan():
+        if (yield from check_exit()):
+            return "We are done here!"
+        while True:
+            # Move forward by 1 step
+            pos = yield from move(1)
+
+            if (yield from check_exit()):
+                return "We are done here!"
+
+            # If couldn't move -- turn (as much as possible)
+            if pos == 0:
+               yield from turn()
+            else:
+                # Try turning left and move there if possible, otherwise continue straight
+                yield from turn(1, direction = 'left')
+                if (yield from check_wall()):
+                    yield from turn(1, direction = 'right')
+                else:
+                    continue
+
+
     with connection(host=args.host, port=args.port) as send:
+
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        plan = plan()
+        resp = None
+        while True:
+            try:
+                resp = send(req := plan.send(resp))
+                logger.info('Request    →   Response: %16r → %r', req, resp)
+                if isinstance(resp, Response.Error):
+                    print("Caught an Error in plan.")
+                    break
+                sleep(args.tick/5)
+            except StopIteration as e:
+                print(f"Finish! {e}")
+                break
