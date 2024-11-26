@@ -6,7 +6,7 @@ from atexit import register as atexit_register
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import cached_property
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
@@ -346,53 +346,77 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    class Direction(IntEnum):
+        LEFT = -1
+        RIGHT = 1
 
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    Sensors = namedtuple("Sensors", ('left', 'right', 'front'))
 
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def move_forward(distance):
+        """Moves forward one square."""
+        logger.debug("Moving forward 1 space.")
+        resp = yield Request.Move()
+        while getattr(resp, "distance", 0) < distance:
+            resp = yield Request.CheckMove()
+        resp = yield Request.StopMove()
 
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def turn(distance=1):
+        """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
+        # Start the turn
+        if distance * Direction.RIGHT > 0:
+            logger.debug(f"Turning left {abs(distance)} step.")
+            resp = yield Request.TurnRight()
+        elif distance * Direction.LEFT > 0:
+            logger.debug(f"Turning right {abs(distance)} step.")
+            resp = yield Request.TurnLeft()
+        # Wait for the turn to complete
+        while (resp := (yield Request.CheckTurn())).turns < abs(distance):
+            pass
+        yield Request.StopTurn()
+        # Take another step forward to avoid spinning
+        yield from move_forward(distance=1)
 
-        for _ in range(4):
-            sleep(1)
+    def read_sensors():
+        return Sensors(
+            left = (yield Request.LeftSensor()),
+            right = (yield Request.RightSensor()),
+            front = (yield Request.FrontSensor()),
+        )
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+    def at_exit():
+        """Report whether we are at the exit."""
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def solve_maze():
+        """Generate instructions for guiding the robot through the maze."""
+        while not (yield from at_exit()):
+            # See which direction we can go
+            sensors = yield from read_sensors()
+            if isinstance(sensors.left, Response.NoWall):
+                # We can turn left
+                yield from turn(distance=Direction.LEFT)
+            elif isinstance(sensors.front, Response.NoWall):
+                # We can move forward
+                yield from move_forward(distance=1)
+            elif isinstance(sensors.right, Response.NoWall):
+                # We can turn right
+                yield from turn(distance=Direction.RIGHT)
+            else:
+                # Dead-end, guess we have to go backwards
+                logger.debug("Turning around.")
+                yield from turn(distance=2*Direction.RIGHT)
 
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    with connection(host=args.host, port=args.port) as send_to_robot:
+        solver = solve_maze()
+        resp = None
+        
+        while True:
+            try:
+                resp = send_to_robot(solver.send(resp))
+            except StopIteration:
+                logger.info("Sweet freedom!")
+                break
 
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
