@@ -384,61 +384,137 @@ if __name__ == '__main__':
         sleep(.5)
 
     ### YOUR WORK HERE ###
-    def move_one(send):
-        send(Request.Move())
-        while True:
-            resp = send(Request.CheckMove())
-            if isinstance(resp, Response.MovingState) and resp.distance == 1:
-                break
-        send(Request.StopMove())
+    """
+    def test_maze():
+        _ = yield Request.Move()
+        while (resp := (yield Request.CheckMove())).distance < 1:
+            # sleep(args.tick)
+            pass
+        _ = yield Request.StopMove()
+    """
 
-    def move_until_wall(send):
-        send(Request.Move())
-        while True:
-            resp = send(Request.FrontSensor())
-            if isinstance(resp, Response.Wall):
-                break
-            sleep(1)
-        send(Request.StopMove())
-
-    def turn_right_until_no_wall(send):
-        send(Request.TurnRight())
-        while True:
-            resp = send(Request.FrontSensor())
-            if isinstance(resp, Response.Wall):
-                break
-            sleep(1)
-        send(Request.StopTurn())
-
-    def turn_left_until_no_wall(send):
-        send(Request.TurnLeft())
-        while True:
-            resp = send(Request.FrontSensor())
-            if isinstance(resp, Response.Wall):
-                break
-            sleep(1)
-        send(Request.StopTurn())
-
-    def am_i_done(send):
-        resp = send(Request.ExitSensor())
+    def is_at_exit():
+        resp = yield Request.ExitSensor()
         return isinstance(resp, Response.Exit)
 
-    def test_gen():
-        yield Request.Test()
+    def is_facing_wall():
+        resp = yield Request.FrontSensor()
+        return isinstance(resp, Response.Wall)
 
-    def move_one():
-        yield Request.StartMove()
-        ...  # How to get responses and handle them?
-        yield Request.StopMove()
+    def move():
+        _ = yield Request.Move()
+        while True:
+            resp = Request.CheckMove()
+            return (yield resp)
 
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def move_until_exit_or_wall():
+        yield from move()
 
         while True:
-            move_one(send)
-            if am_i_done(send):
-                print("Exit get!")
+            exit_resp = (yield from is_at_exit())
+            print(f"{exit_resp = }")
+            at_wall_resp = (yield from is_facing_wall())
+            print(f"{at_wall_resp = }")
+            # if exit_resp:
+            #     break
+            # elif at_wall_resp:
+            #     break
+            if exit_resp or at_wall_resp:
                 break
-            else:
-                print("Stuck")
+        yield Request.StopMove()
+        print("Am i here?")
+
+
+        # cont = True
+        # while cont:
+        #     at_exit = (yield from is_at_exit())
+        #     facing_wall = (yield from is_facing_wall())
+        #     cont = (not at_exit) and (not facing_wall)
+        #     print(cont)
+        #     sleep(args.tick)
+        # yield Request.StopMove()
+
+    def plan():
+        if (yield from is_at_exit()):
+            return
+        yield from move_until_exit_or_wall()
+
+    def executor(instructions):
+        while True:
+            try:
+                req = next(instructions)
+                resp = send(req)
+                logger.info('Request → Response: %16r → %r', req, resp)
+                sleep(args.tick)
+            except StopIteration():
+                break
+
+
+    with connection(host=args.host, port=args.port) as send:
+        """
+        # notes
+        solver = test_maze()
+        resp = None
+        while True:
+            try:
+                # req = next(solver)
+                req = solver.send(resp)
+                resp = send(req)
+                logger.info('Request → Response: %16r → %r', req, resp)
+                sleep(args.tick)
+            except StopIteration:
+                break
+        print(f"{send(Request.ExitSensor()) = }")
+        # end notes
+        """
+
+        executor(plan())
+
+
+        # def log_send(req):
+        #     resp = send(req)
+        #     logger.info('Request → Response: %16r → %r', req, resp)
+        #     return resp
+
+        # def move_one():
+        #     log_send(Request.Move())
+        #     while True:
+        #         resp = log_send(Request.CheckMove())
+        #         if isinstance(resp, Response.MovingState) and resp.distance == 1:
+        #             break
+        #     log_send(Request.StopMove())
+
+        # def move_until_wall_or_exit():
+        #     log_send(Request.Move())
+        #     while True:
+        #         resp_front = log_send(Request.FrontSensor())
+        #         resp_exit = log_send(Request.ExitSensor())
+        #         if isinstance(resp_front, Response.Wall) or isinstance(resp_exit, Response.Exit):
+        #             break
+        #         sleep(1)
+        #     log_send(Request.StopMove())
+
+        # # Generator section
+        # def move_gen():
+        #     resp = log_send(Request.Move())
+        #     yield resp
+        #     while True:
+        #         resp = log_send(Request.CheckMove())
+        #         yield resp
+
+        # def check_front_sensor_gen():
+        #     while True:
+        #         resp = log_send(Request.FrontSensor())
+        #         yield resp
+
+        # def move_until_wall_gen():
+        #     # start moving
+        #     move_gi = move_gen()
+        #     next(move_gi)
+        #     front_sensor_gi = check_front_sensor_gen()
+        #     # Check front sensor until no wall
+        #     for reading in front_sensor_gi:
+        #         sleep(.5)
+        #         if isinstance(reading, Response.NoWall):
+        #             log_send(Request.StopMove())
+        #             break
