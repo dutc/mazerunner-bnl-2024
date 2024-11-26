@@ -364,28 +364,50 @@ if __name__ == '__main__':
         sleep(.1)
 
 
-    def move_unit(client):
+    def move_unit_command(client, units):
         yield client(Request.Move())
         resp = client(Request.CheckMove())
-        while resp.distance < 1:
+        while resp.distance < units:
             yield (resp := client(Request.CheckMove()))
         yield client(Request.StopMove())
 
 
-    def turn_left(client):
+    def turn_left_command(client, turns):
         yield client(Request.TurnLeft())
         resp = client(Request.CheckTurn())
-        while resp.turns < 1:
+        while resp.turns < turns:
             yield (resp := client(Request.CheckTurn()))
         yield client(Request.StopTurn())
 
 
-    def turn_right(client):
+    def turn_right_command(client, turns):
         yield client(Request.TurnRight())
         resp = client(Request.CheckTurn())
-        while resp.turns < 1:
+        while resp.turns < turns:
             yield (resp := client(Request.CheckTurn()))
         yield client(Request.StopTurn())
+
+
+    def move_unit(client, units=1):
+        for move in move_unit_command(client, units):
+            if isinstance(move, Response.Error):
+                raise Exception
+
+
+    def turn_left(client, turns=1):
+        for left in turn_left_command(client, turns):
+            if isinstance(left, Response.Error):
+                raise Exception
+
+
+    def turn_right(client, turns=1):
+        for right in turn_right_command(client, turns):
+            if isinstance(right, Response.Error):
+                raise Exception
+
+
+    def turnaround(client):
+        turn_right(client, 2)
 
 
     def directions():
@@ -441,7 +463,7 @@ if __name__ == '__main__':
             self.x_mov  = self._direction[1][0]
             self.y_mov  = self._direction[1][1]
 
-        def change_direction(self):
+        def change_direction(self, turns):
             if self.reverse_turn:
                 self._directions.send(self.reverse_turn)
                 if self.turning == "left":
@@ -450,18 +472,20 @@ if __name__ == '__main__':
                     self.turning = "left"
                 self.reverse_turn = False
 
-            self._direction = next(self._directions)
-            self.facing = self._direction[0]
-            self.x_mov  = self._direction[1][0]
-            self.y_mov  = self._direction[1][1]
-            self.turns_history[-1] += 1
+            for _ in range(turns):
+                self._direction = next(self._directions)
+                self.facing = self._direction[0]
+                self.x_mov  = self._direction[1][0]
+                self.y_mov  = self._direction[1][1]
+                self.turns_history[-1] += 1
 
         def position(self):
             return (self.x,self.y)
 
-        def move_robot(self):
-            self.x += self.x_mov
-            self.y += self.y_mov
+        def move_robot(self, steps):
+            for _ in range(steps):
+                self.x += self.x_mov
+                self.y += self.y_mov
 
         def check_history(self, x, y):
             return (x, y) in self.visited
@@ -491,49 +515,39 @@ if __name__ == '__main__':
         resp_exit = send(req := Request.ExitSensor())
         while not isinstance(resp_exit, Response.Exit):
             if not isinstance(send(Request.FrontSensor()), Response.Wall) and not Robot.check_history(*Robot.check_move()):
-                for move in move_unit(send):
-                    if isinstance(move, Response.Error):
-                        raise Exception
-                    #print("Moving...")
+                move_unit(send, 1)
                 print("Moving...")
-                Robot.move_robot()
+                Robot.move_robot(1)
                 Robot.add_history(*Robot.position(), turns=0)
             else:
                 print("Encountered a wall or already-seen cell, try turning...")
-                for left in turn_left(send):
-                    #print("Turning left...")
-                    ...
+                turn_left(send)
                 print("Turning left...")
-                Robot.change_direction()
+                Robot.change_direction(1)
+
                 if Robot.turns_history[-1] >= 4:
                     print(f"Tried every direction at {Robot.position()} - backtracking...")
                     # use right turns when backtracking to level the wear on gears somewhat
                     if Robot.turning == "left":
                         Robot.reverse_turn = True
-                    for _ in range(2):
-                        for right in turn_right(send):
-                            #print("Turning back...")
-                            ...
-                        print("Turning back...")
-                        Robot.change_direction()
-                    for move in move_unit(send):
-                        if isinstance(move, Response.Error):
-                            raise Exception
-                        #print("Moving back...")
+
+                    turnaround(send)
+                    print("Turning back...")
+                    Robot.change_direction(2)
+
+                    move_unit(send, 1)
                     print("Moving back...")
-                    Robot.move_robot()
-                    for _ in range(2):
-                        for right in turn_right(send):
-                            #print("Resetting direction...")
-                            ...
-                        print("Resetting direction...")
-                        Robot.change_direction()
+                    Robot.move_robot(1)
+
+                    turnaround(send)
+                    print("Resetting direction...")
+                    Robot.change_direction(2)
+
                     if Robot.turning == "right":
                         Robot.reverse_turn = True
                     Robot.backtrack()
 
             logger.debug("Current robot position is: {Robot.position()}")
-
             resp_exit = send(req := Request.ExitSensor())
 
         print("Maze complete.")
