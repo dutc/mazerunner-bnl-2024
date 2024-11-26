@@ -347,6 +347,13 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
 
+    class Direction(IntEnum):
+        LEFT = -1
+        RIGHT = 1
+
+    Sensors = namedtuple("Sensors", ('left', 'right', 'front'))
+
+
     def move_forward(distance):
         """Moves forward one square."""
         logger.debug("Moving forward 1 space.")
@@ -359,8 +366,10 @@ if __name__ == '__main__':
         """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
         # Start the turn
         if distance * Direction.RIGHT > 0:
+            logger.debug(f"Turning left {abs(distance)} step.")
             resp = yield Request.TurnRight()
         elif distance * Direction.LEFT > 0:
+            logger.debug(f"Turning right {abs(distance)} step.")
             resp = yield Request.TurnLeft()
         # Wait for the turn to complete
         while (resp := (yield Request.CheckTurn())).turns < abs(distance):
@@ -369,12 +378,6 @@ if __name__ == '__main__':
         # Take another step forward to avoid spinning
         yield from move_forward(distance=1)
 
-    class Direction(IntEnum):
-        LEFT = -1
-        RIGHT = 1
-
-    Sensors = namedtuple("Sensors", ('left', 'right', 'front'))
-
     def read_sensors():
         return Sensors(
             left = (yield Request.LeftSensor()),
@@ -382,34 +385,33 @@ if __name__ == '__main__':
             front = (yield Request.FrontSensor()),
         )
 
-    def solve_maze():
-        # Are we at the exit already?
+    def at_exit():
+        """Report whether we are at the exit."""
         resp = yield Request.ExitSensor()
-        # Now we implement our algorithm
-        while not isinstance(resp, Response.Exit):
+        return isinstance(resp, Response.Exit)
+
+    def solve_maze():
+        """Generate instructions for guiding the robot through the maze."""
+        while not (yield from at_exit()):
             # See which direction we can go
             sensors = yield from read_sensors()
             if isinstance(sensors.left, Response.NoWall):
-                # We can move forward
-                logger.debug("Turning left 1 step.")
+                # We can turn left
                 yield from turn(distance=Direction.LEFT)
             elif isinstance(sensors.front, Response.NoWall):
                 # We can move forward
                 yield from move_forward(distance=1)
             elif isinstance(sensors.right, Response.NoWall):
-                # We can move right
-                logger.debug("Turning right 1 step.")
+                # We can turn right
                 yield from turn(distance=Direction.RIGHT)
             else:
-                # Guess we'll have to go backwards
+                # Dead-end, guess we have to go backwards
                 logger.debug("Turning around.")
-                yield from turn(distance=2*Direction.RIGHT)                
-            # Check if we're at the exit for this step
-            resp = yield Request.ExitSensor()
+                yield from turn(distance=2*Direction.RIGHT)
 
     with connection(host=args.host, port=args.port) as send_to_robot:
         solver = solve_maze()
-        resp = send_to_robot(next(solver))
+        resp = None
         
         while True:
             try:
@@ -417,3 +419,4 @@ if __name__ == '__main__':
             except StopIteration:
                 logger.info("Sweet freedom!")
                 break
+
