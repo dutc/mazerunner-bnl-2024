@@ -344,153 +344,70 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.5)
-
-    @dataclass
-    class Robot:
-        send : ...
-
-        @classmethod
-        @contextmanager
-        def from_connection(cls, *, host, port):
-            with connection(host=args.host, port=args.port) as send:
-                yield cls(send=send)
-
-        def move_one(self):
-            return self.move(max_distance=1)
-
-        def move(self, *, max_distance=1):
-            self.send(Request.Move())
-            while True:
-                resp = self.send(Request.CheckMove())
-                match resp:
-                    case Response.MovingState(distance=distance) if distance >= max_distance:
-                        break
-                    case Response.Error():
-                        raise Exception('movement error')
-            self.send(Request.StopMove())
-
-        def turn_around(self):
-            return self.turn(direction=Request.TurnLeft(), max_turns=2)
-
-        def turn_left(self):
-            return self.turn(direction=Request.TurnLeft(), max_turns=1)
-
-        def turn_right(self):
-            return self.turn(direction=Request.TurnRight(), max_turns=1)
-
-        def turn(self, *, direction, max_turns=1):
-            self.send(direction)
-            while True:
-                resp = self.send(Request.CheckTurn())
-                match resp:
-                    case Response.TurningState(turns=turns) if turns >= max_turns:
-                        break
-                    case Response.Error():
-                        raise Exception('turning error')
-            self.send(Request.StopTurn())
-
-        def escaped(self):
-            resp = self.send(Request.ExitSensor())
-            return isinstance(resp, Response.Exit)
-
-        def blocked(self):
-            resp = self.send(Request.FrontSensor())
-            return isinstance(resp, Response.Wall)
+        sleep(.1)
 
     ### YOUR WORK HERE ###
-    with Robot.from_connection(host=args.host, port=args.port) as rob:
-        match args.maze.name:
-            case 'test.mz':
-                rob.move_one()
-            case 'linear0.mz':
-                for _ in range(8):
-                    rob.move_one()
-            case 'linear1.mz':
-                rob.turn_right()
-                for _ in range(9):
-                    rob.move_one()
-            case 'linear2.mz':
-                rob.turn_left()
-                for _ in range(9):
-                    rob.move_one()
-            case 'elbow0.mz':
-                for _ in range(3):
-                    rob.move_one()
-                rob.turn_right()
-                for _ in range(3):
-                    rob.move_one()
-            case 'elbow1.mz':
-                rob.turn_around()
-                for _ in range(3):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(3):
-                    rob.move_one()
-            case 'tjunction0.mz':
-                for _ in range(5):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(3):
-                    rob.move_one()
-            case 'tjunction1.mz':
-                rob.turn_right()
-                for _ in range(5):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(3):
-                    rob.move_one()
-            case 'arbitrary0.mz':
-                rob.turn_right()
-                for _ in range(3):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(3):
-                    rob.move_one()
-                rob.turn_right()
-                for _ in range(4):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(4):
-                    rob.move_one()
-            case 'arbitrary1.mz':
-                rob.turn_around()
-                for _ in range(7):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(4):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_right()
-                for _ in range(5):
-                    rob.move_one()
-            case 'arbitrary2.mz':
-                rob.turn_right()
-                for _ in range(5):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_right()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_right()
-                for _ in range(4):
-                    rob.move_one()
-                rob.turn_left()
-                for _ in range(2):
-                    rob.move_one()
-                rob.turn_right()
-                rob.move_one()
-    if rob.escaped():
-        logger.info(f'Robot escaped from %s!', args.maze)
-    else:
-        logger.info(f'Robot still trapped in %s!', args.maze)
+    class Sleep(namedtuple('SleepBase', 'ticks')):
+        def __new__(cls, ticks=1):
+            return super().__new__(cls, ticks=ticks)
+
+    class WallSensors(namedtuple('WallSensorsBase', 'front left right')):
+        @classmethod
+        def from_responses(cls):
+            return cls(
+                front=isinstance((yield Request.FrontSensor()), Response.Wall),
+                left=isinstance((yield Request.LeftSensor()), Response.Wall),
+                right=isinstance((yield Request.RightSensor()), Response.Wall),
+            )
+    class Sensors(namedtuple('SensorsBase', 'walls exit')):
+        @classmethod
+        def from_responses(cls):
+            return cls(
+                walls=(yield from WallSensors.from_responses()),
+                exit=isinstance((yield Request.ExitSensor()), Response.Exit),
+            )
+
+    def move_until(*, distance):
+        yield Request.Move()
+        while True:
+            yield Sleep(ticks=.5)
+            if (resp := (yield Request.CheckMove())).distance >= distance:
+                break
+        yield Request.StopMove()
+        return resp.distance == distance
+    def turn_until(*, turns):
+        while True:
+            yield Sleep(ticks=.5)
+            if (resp := (yield Request.CheckTurn())).turns >= turns:
+                break
+        yield Request.StopTurn()
+        return resp.turns == turns
+    def turn_left():
+        yield Request.TurnLeft()
+        return (yield from turn_until(turns=1))
+    def turn_right():
+        yield Request.TurnRight()
+        return (yield from turn_until(turns=1))
+    def turn_around():
+        yield Request.TurnRight()
+        return (yield from turn_until(turns=2))
+
+    def simple_strategy():
+        while not (sens := (yield from Sensors.from_responses())).exit:
+            match sens:
+                case Sensors(walls=WallSensors(left=False)):
+                    yield from turn_left()
+                case Sensors(walls=WallSensors(front=True, right=False)):
+                    yield from turn_right()
+                case Sensors(walls=WallSensors(front=True, left=True, right=True)):
+                    yield from turn_around()
+            yield from move_until(distance=1)
+
+    with connection(host=args.host, port=args.port) as send:
+        for req in iter((lambda strat=simple_strategy(): strat.send(res)), res := None):
+            match req:
+                case Request():
+                    res = send(req)
+                case Sleep(ticks=ticks):
+                    res = sleep(args.tick * ticks)
+        logger.info(f'ExitSensor() = %r, maze = %r', send(Request.ExitSensor()), args.maze)
