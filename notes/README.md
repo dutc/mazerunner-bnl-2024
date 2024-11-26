@@ -1,6 +1,6 @@
 # Instructor Notes
 
-## Mon Nov 25 (AM)
+## Mon Nov 25
 
 ```python
 print("Let's take a look!")
@@ -459,3 +459,323 @@ if __name__ == '__main__':
         state()
         state = m.send(inp)
 ```
+
+## Tue Nov 26
+
+```python
+def move():
+    yield Start
+    while True:
+        resp = yield Check
+    yield Stop
+
+def move():
+    yield send(Start)
+    while True:
+        yield send(Check)
+
+def executor():
+    m = move()
+    while True:
+        if next(m):
+            break
+```
+
+```python
+from requests import get as req_get
+
+def get(*args, **kwargs):
+    for _ in range(2):
+        try:
+            return req_get(*args, **kwargs)
+        except HttpError:
+            pass
+
+def f():
+    if get('http://api/endpoint').json()['result']:
+        return g(), h()
+    else:
+        return ...
+
+def g():
+    return get('http://api/other-endpoint')
+
+def h():
+    return get('http://api/one-more-endpoint')
+
+if __main__ == '__name__':
+    f()
+```
+
+```python
+from requests import get
+
+def f():
+    if (res := yield 'http://api/endpoint'):
+        yield from g()
+        yield from h()
+    else:
+        ...
+
+def g():
+    yield 'http://api/other-endpoint'
+
+def h():
+    yield 'http://api/one-more-endpoint'
+
+if __name__ == '__main__':
+    inst = f()
+    res = None
+    retry_counts = 0
+    while True:
+        try:
+            url = inst.send(res)
+            try:
+                res = get(url).json()['result']
+            except RandomApiError:
+                retry_counts += 1
+                if retry_counts > 10:
+                    raise
+        except StopIteration:
+            break
+```
+
+```python
+def state_machine(send):
+    while True:
+        if send(Response.CheckExit()):
+            pass
+```
+
+```python
+def coro():
+    _ = yield 123
+
+from dis import dis
+dis(coro)
+# ci = coro()
+# ci.send(123)
+```
+
+```python
+from itertools import chain
+
+def g0():
+    yield 1
+    yield 2
+    yield 3
+
+def g1():
+    yield 4
+    yield 5
+    yield 6
+
+for x in chain(g0(), g1()):
+    print(f'{x = }')
+```
+
+```python
+def coro(x=None):
+    while True:
+        x = yield x
+
+ci = coro(123)
+next(ci) # first step
+while True: # other step
+    ci.send(...)
+```
+
+```python
+def coro0():
+    ...
+def coro1():
+    ...
+
+# coro0
+# first - rest - ... - rest
+
+# coro1
+# first - rest - ... - rest
+
+# chain(coro0, coro1)
+# first - rest - ... - rest - first - rest - ... - rest
+#  x       .      .     .      x        .     .     .
+```
+
+```python
+def repeat(value):
+    while True:
+        yield value
+
+for x in repeat(123):
+    print(f'{x = }')
+```
+
+```python
+def latch(value):
+    while True:
+        new_value = yield value
+        if new_value is not None:
+            value = new_value
+
+ci = latch(123); next(ci)
+# print(f'{next(ci)     = }')
+print(f'{ci.send(456) = }')
+print(f'{next(ci)     = }')
+print(f'{next(ci)     = }')
+print(f'{next(ci)     = }')
+```
+
+```python
+from functools import wraps
+
+def pumped(coro):
+    @wraps(coro)
+    def inner(*args, **kwargs):
+        ci = coro(*args, **kwargs)
+        next(ci)
+        return ci
+    return inner
+
+@pumped
+def latch():
+    value = yield
+    while True:
+        new_value = yield value
+        if new_value is not None:
+            value = new_value
+
+@pumped
+def latch(value):
+    while True:
+        new_value = yield value
+        if new_value is not None:
+            value = new_value
+
+ci = latch()
+# print(f'{next(ci)     = }')
+print(f'{ci.send(456) = }')
+print(f'{next(ci)     = }')
+print(f'{next(ci)     = }')
+print(f'{next(ci)     = }')
+```
+
+```python
+# first → rest → ...  → rest
+# rest  → ...  → rest → last
+```
+
+```python
+from functools import wraps
+
+def pumped(coro):
+    @wraps(coro)
+    def inner(*args, **kwargs):
+        ci = coro(*args, **kwargs)
+        next(ci)
+        return ci
+    return inner
+
+# @pumped
+def coro():
+    # print(f'{(yield)     = }')
+    print(f'{(yield 123) = }')
+    print(f'{(yield 456) = }')
+    print(f'{(yield 789) = }')
+
+ci = coro()
+print(f'{next(ci)     = }')
+print(f'{ci.send(...) = }')
+print(f'{ci.send(...) = }')
+print(f'{ci.send(...) = }')
+# print(f'{ci.send(...) = }')
+```
+
+```python
+def coro():
+    yield ...
+    yield ...
+    yield ...
+    return ...
+```
+
+```python
+def f(data, *, mode):
+    if mode:
+        return ...
+    else:
+        return ...
+
+def g(data, *, mode):
+    while True:
+        if mode:
+            yield ...
+        else:
+            yield ...
+
+@pumped
+def coro(*, mode):
+    while True:
+        if mode:
+            data = yield ...
+        else:
+            data = yield ...
+```
+
+Should everything be pumped?
+
+```python
+from functools import wraps
+
+def pumped(coro):
+    @wraps(coro)
+    def inner(*args, **kwargs):
+        ci = coro(*args, **kwargs)
+        next(ci)
+        return ci
+    return inner
+
+@pumped
+def coro():
+    print(f'{(yield)      = }')
+    print(f'{(yield  123) = }')
+    print(f'{(yield  456) = }')
+    print(f'{(yield  789) = }')
+    return 999
+
+ci = coro()
+next(ci)
+for _ in range(3):
+    print(f'{ci.send(...) = }')
+try:
+    next(ci)
+except StopIteration as e:
+    print(f'{e = }')
+```
+
+### Callum & Abby
+
+- Roman & Kari
+- Nate & Seher
+- Eugene & Eric
+
+message payload.
+```python
+```
+
+### Shekar & Mark
+
+- Abigail & Jun
+- Robert & Juan
+
+send_command
+
+```python
+```
+
+### Amendments
+
+Adjusting the Request Stream:
+- Relative Moves/Synthetic Moves
+- Fusing/Splitting/Replacing Moves
+- State Reconstruction
