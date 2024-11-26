@@ -20,7 +20,7 @@ from sys import exit
 from textwrap import dedent, indent
 from time import sleep
 from types import SimpleNamespace
-from typing import Callable
+from typing import Callable, Generator
 
 from numpy import array, full, isin, ndarray, ravel_multi_index
 
@@ -427,5 +427,51 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
-        controller = RobotController(send)
-        controller.move_to_exit()
+
+        @dataclass
+        class Sleep:
+            duration: float
+
+        def move_until_wall_or_exit():
+            m = move()
+            cont = True
+            while cont:
+                facing_wall = (yield from check_wall()) 
+                on_exit = (yield from check_exit())
+                cont = (not facing_wall) and (not on_exit)
+                yield next(m)
+                yield Sleep(0.5)
+            yield Request.StopMove()
+
+        def check_wall():
+            resp = yield Request.FrontSensor()
+            return isinstance(resp, Response.Wall)
+
+        def check_exit():
+            resp = yield Request.ExitSensor()
+            return isinstance(resp, Response.Exit)
+
+        def move():
+            yield Request.Move()
+            while True:
+                yield Request.CheckMove()
+
+        def execute(instructions):
+            instruction = next(instructions)
+            while True:
+                try:
+                    match instruction:
+                        case Request():
+                            resp = send(instruction)
+                            logger.info('Request → Response: %16r → %r', instruction, resp)
+                            instruction = instructions.send(resp)
+                        case Sleep(duration):
+                            sleep(duration)
+                            instruction = next(instructions)
+                        case _:
+                            raise RuntimeError()
+                except StopIteration:
+                    print("Done")
+                    break
+
+        execute(move_until_wall_or_exit())
