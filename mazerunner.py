@@ -394,17 +394,37 @@ if __name__ == '__main__':
                      "down":  ( 1, 0),
                      "right": ( 0, 1),
         }
+        previous = "up"
+        reversing = "False"
         while True:
             while True:
                 for direction, value in rotation.items():
+                    if reversing is True:
+                        if previous == direction:
+                            reversing = False
+                        else:
+                            continue
+                    previous = direction
                     reverse = yield direction, value
                     if reverse is True:
                         break
+                if reverse is True:
+                    reversing = True
+                    break
             while True:
                 for direction, value in reversed(rotation.items()):
+                    if reverse is True:
+                        if previous == direction:
+                            reversing = False
+                        else:
+                            continue
+                    previous = direction
                     reverse = yield direction, value
                     if reverse is True:
                         break
+                if reverse is True:
+                    reversing = True
+                    break
 
 
     class RobotState():
@@ -416,21 +436,21 @@ if __name__ == '__main__':
             self.visited = set()
             self.reverse_turn = reverse_turn
             self._directions = directions()
-            self.change_direction()
+            self._direction = next(self._directions)
+            self.facing = self._direction[0]
+            self.x_mov  = self._direction[1][0]
+            self.y_mov  = self._direction[1][1]
 
         def change_direction(self):
-            self._direction = next(self._directions)
             if self.reverse_turn:
-                turn_face = self._directions.send(self.reverse_turn)[0]
-                self.reverse_turn = False
-                while self.facing != turn_face:
-                    turn_face = self._directions.send(self.reverse_turn)[0]
-                self._direction = next(self._directions)
+                self._directions.send(self.reverse_turn)
                 if self.turning == "left":
                     self.turning = "right"
                 else:
                     self.turning = "left"
+                self.reverse_turn = False
 
+            self._direction = next(self._directions)
             self.facing = self._direction[0]
             self.x_mov  = self._direction[1][0]
             self.y_mov  = self._direction[1][1]
