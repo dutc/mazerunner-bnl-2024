@@ -779,3 +779,120 @@ Adjusting the Request Stream:
 - Relative Moves/Synthetic Moves
 - Fusing/Splitting/Replacing Moves
 - State Reconstruction
+
+## Wed Nov 27
+
+```python
+print("Let's take a look!")
+```
+
+```python
+from itertools import count
+
+power_cycle_freq = 10
+
+for tick in count(start=1):
+    if tick % power_cycle_freq == 0:
+        ...
+```
+
+```python
+from itertools import count
+from random import random
+
+power_cycle_freq = 10
+power_cycle_prob = .50
+
+history = []
+for tick in count(start=1):
+    if tick % power_cycle_freq == 0 and random() < power_cycle_prob:
+        ...
+    if all(st is AgentState.Moving for st in history[-3:]):
+        ...
+```
+
+```python
+class T:
+    def __init__(self):
+        self.state = ...
+
+    def __call__(self):
+        if self.state == ...:
+            self.state = ...
+        elif self.state == ...:
+            self.state = ...
+        elif self.state == ...:
+            self.state = ...
+
+class T:
+    def __init__(self):
+        self.flag0 = ...
+        self.flag1 = ...
+        self.flag2 = ...
+
+    def f(self):
+        if self.flag0 and self.flag1:
+            self.flag2 = ...
+
+    def g(self):
+        if self.flag2:
+            self.flag1 = ...
+```
+
+```python
+from functools import wraps
+
+def f(x):
+    return x * 2
+
+@lambda coro: wraps(coro)(lambda *a, **kw: [ci := coro(*a, **kw), next(ci), lambda value=None: ci.send(value)][-1])
+def coro():
+    history = []
+    x = yield
+    while True:
+        history.append(x)
+        x = yield x * 2 + sum(history)
+
+for x in range(10):
+    print(f'{f(x) = }')
+
+ci = coro()
+for x in range(10):
+    print(f'{ci(x) = }')
+```
+
+```python
+def coro(g):
+    for x in g:
+        _, _ = yield x
+
+def g():
+    while True:
+        yield ..., ...
+
+ci = coro(g())
+for x in ci:
+    print(f'{x = }')
+```
+
+```python
+from collections import namedtuple
+
+Request = namedtuple('Request', 'x y')
+Response = namedtuple('Response', 'x y z')
+
+def coro():
+    while True:
+        res = yield req
+```
+
+```python
+from collections import namedtuple
+
+Message = namedtuple('Message', 'x y')
+Command = namedtuple('Command', 'x y z')
+
+def coro():
+    while True:
+        cmd = yield msg
+```
