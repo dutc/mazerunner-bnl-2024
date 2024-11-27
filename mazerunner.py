@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from argparse import ArgumentParser
-from asyncio import run, gather, start_server, TaskGroup, sleep as aio_sleep
+from asyncio import run, start_server, TaskGroup, sleep as aio_sleep
 from atexit import register as atexit_register
 from collections import namedtuple
 from contextlib import contextmanager
@@ -76,6 +76,7 @@ class Response(Message):
 for msg in (
     dedent(
         """
+    PowerOn PowerOff
     Move StopMove CheckMove
     TurnLeft TurnRight StopTurn CheckTurn
     FrontSensor LeftSensor RightSensor ExitSensor Test
@@ -88,6 +89,7 @@ for msg in (
 for msg in (
     dedent(
         """
+    PoweredOn PoweredOff
     MovingStart MovingStop
     TurningStart TurningStop
     Wall NoWall
@@ -166,13 +168,14 @@ def render_maze(maze: Maze | ndarray):
         yield [tile.value for tile in row]
 
 
-def agent_process(host, port, maze, seed, errors, tick):
+def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
     rnd = Random(seed)
 
     maze = Maze.from_file(maze)
     for row in overlay(render_maze(maze), {maze.start: "@"}):
         logger.debug("Maze: %s", " ".join(row))
 
+    AgentPower = Enum("AgentPower", "On Off")
     AgentState = Enum("AgentState", "Moving TurningLeft TurningRight")
 
     Location = namedtuple("Location", "angle forward left right")
@@ -182,8 +185,11 @@ def agent_process(host, port, maze, seed, errors, tick):
         state: AgentState
         location: tuple[int, int]
         maze: Maze
+        power: AgentPower = AgentPower.Off
+        power_cycle: int = None
 
         tick: int = 1
+        total_ticks: int = 1
 
         prev_location: tuple[int, int] = None
         num_turns: int = 0
@@ -221,38 +227,52 @@ def agent_process(host, port, maze, seed, errors, tick):
         async def __call__(self):
             maze = self.maze.maze
             while True:
-                match self.state:
-                    case AgentState.Moving:
-                        old_loc = self.location
-                        new_loc = next(self._hold).forward(*old_loc)
-                        if not (
-                            0 <= new_loc[0] < maze.shape[0]
-                            and 0 <= new_loc[-1] < maze.shape[-1]
-                        ):
-                            pass
-                        elif maze[old_loc] is Tile.Exit:
-                            self.location = old_loc
-                        elif maze[new_loc] is Tile.Floor or maze[new_loc] is Tile.Exit:
-                            self.location = new_loc
-                    case AgentState.TurningLeft:
-                        self.num_turns += 1
-                        next(self._turn_left)
-                    case AgentState.TurningRight:
-                        self.num_turns += 1
-                        next(self._turn_right)
+                if self.power is AgentPower.On:
+                    if (
+                        self.power_cycle is not None
+                        and self.total_ticks % self.power_cycle == 0
+                    ):
+                        self.power = AgentPower.Off
+                        self.state = None
+                    match self.state:
+                        case AgentState.Moving:
+                            old_loc = self.location
+                            new_loc = next(self._hold).forward(*old_loc)
+                            if not (
+                                0 <= new_loc[0] < maze.shape[0]
+                                and 0 <= new_loc[-1] < maze.shape[-1]
+                            ):
+                                pass
+                            elif maze[old_loc] is Tile.Exit:
+                                self.location = old_loc
+                            elif (
+                                maze[new_loc] is Tile.Floor
+                                or maze[new_loc] is Tile.Exit
+                            ):
+                                self.location = new_loc
+                        case AgentState.TurningLeft:
+                            self.num_turns += 1
+                            next(self._turn_left)
+                        case AgentState.TurningRight:
+                            self.num_turns += 1
+                            next(self._turn_right)
                 tick = (
                     rnd.uniform(0.5 * self.tick, 1.5 * self.tick)
                     if errors
                     else self.tick
                 )
                 logger.debug(
-                    "Robot: tick=%f, location=%r, angle=%r, state=%r, @exit?=%r",
+                    "Robot: tick=%f, total_ticks=%d, power_cycle=%r, location=%r, angle=%r, state=%r, power=%r, @exit?=%r",
                     tick,
+                    self.total_ticks,
+                    self.power_cycle,
                     self.location,
                     next(self._hold).angle,
                     self.state,
+                    self.power,
                     maze[self.location] is Tile.Exit,
                 )
+                self.total_ticks += 1
                 await aio_sleep(tick)
 
         @property
@@ -285,48 +305,54 @@ def agent_process(host, port, maze, seed, errors, tick):
                                 continue
 
                     match req:
+                        case Request.PowerOn():
+                            self.power = AgentPower.On
+                            resp = Response.PoweredOn()
+                        case Request.PowerOff():
+                            self.power = AgentPower.Off
+                            resp = Response.PoweredOff()
                         case Request.Test():
                             resp = Response.TestSuccess()
-                        case Request.Move():
+                        case Request.Move() if self.power is AgentPower.On:
                             if self.state is None:
                                 self.prev_location = self.location
                                 self.state = AgentState.Moving
                                 resp = Response.MovingStart()
-                        case Request.TurnLeft():
+                        case Request.TurnLeft() if self.power is AgentPower.On:
                             if self.state is None:
                                 self.num_turns = 0
                                 self.state = AgentState.TurningLeft
                                 resp = Response.TurningStart()
-                        case Request.TurnRight():
+                        case Request.TurnRight() if self.power is AgentPower.On:
                             if self.state is None:
                                 self.num_turns = 0
                                 self.state = AgentState.TurningRight
                                 resp = Response.TurningStart()
-                        case Request.StopMove():
+                        case Request.StopMove() if self.power is AgentPower.On:
                             if self.state is AgentState.Moving:
                                 self.state = None
                                 resp = Response.MovingStop()
-                        case Request.StopTurn():
+                        case Request.StopTurn() if self.power is AgentPower.On:
                             if (
                                 self.state is AgentState.TurningLeft
                                 or self.state is AgentState.TurningRight
                             ):
                                 self.state = None
                                 resp = Response.TurningStop()
-                        case Request.CheckMove():
+                        case Request.CheckMove() if self.power is AgentPower.On:
                             if self.state is AgentState.Moving:
                                 resp = Response.MovingState(
                                     abs(
                                         array(self.prev_location) - array(self.location)
                                     ).sum()
                                 )
-                        case Request.CheckTurn():
+                        case Request.CheckTurn() if self.power is AgentPower.On:
                             if (
                                 self.state is AgentState.TurningLeft
                                 or self.state is AgentState.TurningRight
                             ):
                                 resp = Response.TurningState(turns=self.num_turns)
-                        case Request.FrontSensor():
+                        case Request.FrontSensor() if self.power is AgentPower.On:
                             sensor_loc = next(self._hold).forward(*self.location)
                             if (
                                 0 <= sensor_loc[0] < self.maze.maze.shape[0]
@@ -337,7 +363,7 @@ def agent_process(host, port, maze, seed, errors, tick):
                                     if self.maze.maze[sensor_loc] is Tile.Wall
                                     else Response.NoWall()
                                 )
-                        case Request.LeftSensor():
+                        case Request.LeftSensor() if self.power is AgentPower.On:
                             sensor_loc = next(self._hold).left(*self.location)
                             if (
                                 0 <= sensor_loc[0] < self.maze.maze.shape[0]
@@ -348,7 +374,7 @@ def agent_process(host, port, maze, seed, errors, tick):
                                     if self.maze.maze[sensor_loc] is Tile.Wall
                                     else Response.NoWall()
                                 )
-                        case Request.RightSensor():
+                        case Request.RightSensor() if self.power is AgentPower.On:
                             sensor_loc = next(self._hold).right(*self.location)
                             if (
                                 0 <= sensor_loc[0] < self.maze.maze.shape[0]
@@ -359,7 +385,7 @@ def agent_process(host, port, maze, seed, errors, tick):
                                     if self.maze.maze[sensor_loc] is Tile.Wall
                                     else Response.NoWall()
                                 )
-                        case Request.ExitSensor():
+                        case Request.ExitSensor() if self.power is AgentPower.On:
                             resp = (
                                 Message.Exit()
                                 if self.maze.maze[self.location] is Tile.Exit
@@ -370,7 +396,13 @@ def agent_process(host, port, maze, seed, errors, tick):
             return handler
 
     async def server(maze):
-        ag = Agent(maze=maze, state=None, location=maze.start, tick=tick)
+        ag = Agent(
+            maze=maze,
+            state=None,
+            location=maze.start,
+            tick=tick,
+            power_cycle=power_cycle,
+        )
         server = await start_server(ag.handler, host, port)
         for name in {sock.getsockname() for sock in server.sockets}:
             logger.debug("Serving on: %r", name)
@@ -419,6 +451,9 @@ parser.add_argument("--maze", required=True, type=Path, help="path to maze")
 parser.add_argument("--seed", type=int, default=0, help="random seed")
 parser.add_argument("--tick", type=float, default=1, help="tick speed")
 parser.add_argument(
+    "--power-cycle", type=int, default=None, help="power cycle frequency"
+)
+parser.add_argument(
     "-v", "--verbose", action="count", default=0, help="increase logging verbosity"
 )
 
@@ -433,6 +468,7 @@ if __name__ == "__main__":
         "seed": args.seed,
         "errors": args.errors,
         "tick": args.tick,
+        "power_cycle": args.power_cycle,
     }
     if args.standalone:
         exit(agent_process(**agent_kwargs))
@@ -445,10 +481,13 @@ if __name__ == "__main__":
             kill(proc.pid, SIGTERM)
             proc.join()
 
-        sleep(0.5)
+        sleep(0.1)
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
+
+        resp = send(req := Request.PowerOn())
+        logger.info("Request → Response: %16r → %r", req, resp)
 
         def move_forward():
             resp = send(req := Request.Move())
