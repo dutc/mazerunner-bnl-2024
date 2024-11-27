@@ -403,19 +403,6 @@ if __name__ == '__main__':
             yield client(Request.FrontSensor())
 
 
-    from functools import wraps
-    def manage_power(func):
-        @wraps(func)
-        def inner(*args, **kwargs):
-            power_on(args[0])
-            status = func(*args, **kwargs)
-            if status == True:
-                power_off(args[0])
-                logger.info("Powering off...")
-            return status
-        return inner
-
-
     def test_connection(client):
         for test in test_connection_command(client):
             if isinstance(test, Response.Error):
@@ -596,9 +583,12 @@ if __name__ == '__main__':
     def manage_power(func):
         @wraps(func)
         def inner(*args, **kwargs):
-            if not power_on(args[0]):
-                raise Exception("Failed to power on...")
-            status = func(*args, **kwargs)
+            try:
+                status = func(*args, **kwargs)
+            except Exception as e:
+                if not power_on(args[0]):
+                    raise Exception("Failed to power on...") from e
+                status = func(*args, **kwargs)
             if status == True:
                 logger.info("Powering off...")
                 if not power_off(args[0]):
