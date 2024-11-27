@@ -374,7 +374,20 @@ if __name__ == '__main__':
     def stop_move():
         resp = yield Request.StopMove()
         return resp
+    
+    def power_on():
+        yield Request.PowerOn()
+    
+    from functools import wraps
 
+    def power_decorator(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            yield from power_on()
+            return (yield from func(*args, **kwargs))
+        return inner
+
+    @power_decorator
     def test_maze():
         yield from move()
         exit = False
