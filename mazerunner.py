@@ -377,6 +377,9 @@ if __name__ == '__main__':
     
     def power_on():
         yield Request.PowerOn()
+
+    def power_off():
+        yield Request.PowerOff()
     
     from functools import wraps
 
@@ -384,7 +387,9 @@ if __name__ == '__main__':
         @wraps(func)
         def inner(*args, **kwargs):
             yield from power_on()
-            return (yield from func(*args, **kwargs))
+            rtn = yield from func(*args, **kwargs)
+            yield from power_off()
+            return rtn
         return inner
 
     @power_decorator
@@ -394,8 +399,7 @@ if __name__ == '__main__':
         while not exit:
             exit = yield from exit_sensor()
             sleep(args.tick)
-        yield from stop_move()
-            
+        yield from stop_move() 
 
     with connection(host=args.host, port=args.port) as send:
         instructions = test_maze()
