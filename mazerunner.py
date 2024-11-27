@@ -486,29 +486,20 @@ if __name__ == "__main__":
             kill(proc.pid, SIGTERM)
             proc.join()
 
-        sleep(0.1)
+        sleep(0.5)
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
 
-        resp = send(req := Request.CheckPower())
-        logger.info("Request → Response: %16r → %r", req, resp)
-        resp = send(req := Request.PowerOn())
-        logger.info("Request → Response: %16r → %r", req, resp)
-        resp = send(req := Request.CheckPower())
-        logger.info("Request → Response: %16r → %r", req, resp)
-
-        # def power_manager(runner, power_cycle=None):
-        #     @wraps(runner)
-        #     def wrapper(*args, **kwargs):
-        #         yield Request.PowerOn()
-        #         for i, task in enumerate(runner(*args, **kwargs)):
-        #             if power_cycle and i % power_cycle == 0:
-        #                 yield Request.PowerOff()
-        #                 yield Request.PowerOn()
-        #             yield task
-        #         yield Request.PowerOff()
-        #     return wrapper
+        def power_manager(runner):
+            @wraps(runner)
+            def wrapper(*args, **kwargs):
+                resp = send(Request.CheckPower())
+                # logger.info("Request → Response: %16r → %r", req, resp)
+                if isinstance(resp, Response.PoweredOff):
+                    logger.info("POWER MANAGER: PoweredOff() → PoweredOn()")
+                    yield Request.PowerOn()
+            return wrapper
 
         def move_forward():
             resp = send(req := Request.Move())
@@ -584,6 +575,7 @@ if __name__ == "__main__":
                 elif state == states[7]:
                     yield "Turn Left Twice"
 
+        @power_manager
         def runner():
             instruction = "Forward"
             while True:
