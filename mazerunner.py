@@ -448,27 +448,108 @@ if __name__ == "__main__":
         sleep(0.5)
 
     ### YOUR WORK HERE ###
-    def sensor_aggregator(send, req):
-        front_resp = send(req.FrontSensor())
-        left_resp = send(req.LeftSensor())
-        right_resp = send(req.RightSensor())
-        yield {"front": front_resp, "left": left_resp, "right": right_resp}
-
-    def movement_controller(send, req, sensors):
-        if sensors["front"] == Response.NoWall():
-            send(Request.Move())
-        elif sensors["left"] == Response.NoWall():
-            send(Request.TurnLeft())
-        elif sensors["right"] == Response.NoWall():
-            send(Request.TurnRight())
-
     with connection(host=args.host, port=args.port) as send:
-        # Supervise the state of the agent and track movement
 
-        # Make a sensor agent that can return a combined state of the sensors
-        sensors = sensor_aggregator(send, Request)
-        logger.debug("Sensors: %r", next(sensors))
+        def move_forward():
+            resp = send(req := Request.Move())
+            logger.info("Request → Response: %16r → %r", req, resp)
+            distance = send(req := Request.CheckMove()).distance
+            while distance == 0:
+                distance = send(req := Request.CheckMove()).distance
+                sleep(0.5)
+            resp = send(req := Request.StopMove())
+            logger.info("Request → Response: %16r → %r", req, resp)
 
-        # Act on the sensor state
+        def turn_left(angle, forward=True):
+            resp = send(req := Request.TurnLeft())
+            logger.info("Request → Response: %16r → %r", req, resp)
+            turns = send(req := Request.CheckTurn()).turns
+            while turns < angle:
+                turns = send(req := Request.CheckTurn()).turns
+                sleep(0.5)
+            resp = send(req := Request.StopTurn())
+            logger.info("Request → Response: %16r → %r", req, resp)
+            if forward:
+                move_forward()
 
-        
+        def turn_right(angle, forward=True):
+            resp = send(req := Request.TurnRight())
+            logger.info("Request → Response: %16r → %r", req, resp)
+            turns = send(req := Request.CheckTurn()).turns
+            while turns < angle:
+                turns = send(req := Request.CheckTurn()).turns
+                sleep(0.5)
+            resp = send(req := Request.StopTurn())
+            logger.info("Request → Response: %16r → %r", req, resp)
+            if forward:
+                move_forward()
+
+        states = [
+            [True, True, True],  # 0: Go Forward
+            [True, True, False],  # 1: Go Forward
+            [True, False, True],  # 2: Turn Left and forward
+            [True, False, False],  # 3: Go Forward
+            [False, True, True],  # 4: Turn Left and forward
+            [False, True, False],  # 5: Turn Right and forward
+            [False, False, True],  # 6: Turn Left and forward
+            [False, False, False],  # 7: Turn Left Twice
+        ]
+        # print(states)
+        allSensors = [
+            Request.FrontSensor(),
+            Request.RightSensor(),
+            Request.LeftSensor(),
+        ]
+
+        def action_state():
+            state = states[0]
+            while True:
+                new_state = yield "Forward" if state == states[0] else None
+                if new_state:
+                    state = new_state
+                if state == states[0]:
+                    yield "Forward"
+                elif state == states[1]:
+                    yield "Forward"
+                elif state == states[2]:
+                    yield "Turn Left"
+                elif state == states[3]:
+                    yield "Forward"
+                elif state == states[4]:
+                    yield "Turn Left"
+                elif state == states[5]:
+                    yield "Turn Right"
+                elif state == states[6]:
+                    yield "Turn Left"
+                elif state == states[7]:
+                    yield "Turn Left Twice"
+
+        def runner():
+            instruction = "Forward"
+            while True:
+                new_instruction = yield None if instruction == "Forward" else None
+                if new_instruction:
+                    instruction = new_instruction
+                if instruction == "Forward":
+                    yield move_forward()
+                elif instruction == "Turn Right":
+                    yield turn_right(1)
+                elif instruction == "Turn Left":
+                    yield turn_left(1)
+                elif instruction == "Turn Left Twice":
+                    yield turn_left(2)
+
+        machine_state = action_state()
+        next(machine_state)
+        machine_run = runner()
+        next(machine_run)
+
+        while isinstance(send(req := Request.ExitSensor()), Request.NoExit):
+            currentState = [
+                isinstance(send(req := sensor), Request.NoWall) for sensor in allSensors
+            ]
+            print(currentState)
+            instruction = machine_state.send(currentState)
+            machine_run.send(instruction)
+
+        print("Exit Found")
