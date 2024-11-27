@@ -412,17 +412,19 @@ if __name__ == '__main__':
         yield from stop_move() 
 
 
-    with connection(host=args.host, port=args.port) as send:
-        instructions = test_maze()
-        response = None
-        while True:
-            try:
-                request = instructions.send(response)
-                response = send(request)
-                logger.info('Request → Response: %16r → %r', request, response)
-            except StopIteration:
-                break
+    def run(plan):
+        with connection(host=args.host, port=args.port) as send:
+            instructions = plan()
+            response = None
+            while True:
+                try:
+                    request = instructions.send(response)
+                    response = send(request)
+                    logger.info('Request → Response: %16r → %r', request, response)
+                except StopIteration:
+                    break
 
+    run(test_maze)
 
 def front_sensor():
     resp = send(req := Request.FrontSensor())
