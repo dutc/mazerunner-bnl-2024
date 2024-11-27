@@ -335,7 +335,7 @@ parser = ArgumentParser()
 parser.add_argument('--standalone', action='store_true', default=False, help='run mazerunner agent standalone')
 parser.add_argument('--errors', action='store_true', default=False, help='enable errors')
 parser.add_argument('--host', type=str, default='127.0.0.1', help='TCP host for mazerunner agent')
-parser.add_argument('--port', type=int, default=8855, help='TCP port for mazerunner agent')
+parser.add_argument('--port', type=int, default=8856, help='TCP port for mazerunner agent')
 parser.add_argument('--maze', required=True, type=Path, help='path to maze')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--tick', type=float, default=1, help='tick speed')
@@ -361,62 +361,144 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(3)
 
     ### YOUR WORK HERE ###
+    
     with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+        def move_forward():
+            resp = send(req := Request.Move())
             logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+            distance = send(req := Request.CheckMove()).distance
+            while distance == 0:
+                distance = send(req := Request.CheckMove()).distance
+                sleep(0.5)
+            resp = send(req := Request.StopMove())
             logger.info('Request → Response: %16r → %r', req, resp)
+            
+        def turn_left(angle, forward=True):
+            resp = send(req := Request.TurnLeft())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            turns = send(req := Request.CheckTurn()).turns
+            while turns < angle:
+                turns = send(req := Request.CheckTurn()).turns
+                sleep(0.5)
+            resp = send(req := Request.StopTurn())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if forward:
+                move_forward()
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        def turn_right(angle, forward=True):
+            resp = send(req := Request.TurnRight())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            turns = send(req := Request.CheckTurn()).turns
+            while turns < angle:
+                turns = send(req := Request.CheckTurn()).turns
+                sleep(0.5)
+            resp = send(req := Request.StopTurn())
+            logger.info('Request → Response: %16r → %r', req, resp)
+            if forward:
+                move_forward()
 
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        sleep(1)
+        
+        states =[
+                  [True,  True,  True],  # 0: Go Forward
+                  [True,  True,  False], # 1: Go Forward
+                  [True,  False, True],  # 2: Turn Left and forward
+                  [True,  False, False], # 3: Go Forward
+        
+                  [False, True,  True],  # 4: Turn Left and forward
+                  [False, True,  False], # 5: Turn Right and forward
+                  [False, False, True],  # 6: Turn Left and forward
+                  [False, False, False]  # 7: Turn Left Twice
+                  ]
+        # print(states)
+        allSensors = [Request.FrontSensor(),
+                      Request.RightSensor(),
+                      Request.LeftSensor()]
 
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        def action_state():
+            state = states[0]
+            while True:
+                new_state = yield "Forward" if state == states[0] else None
+                if new_state:
+                    state = new_state
+                if state == states[0]:
+                    yield "Forward"
+                elif state == states[1]:
+                    yield "Forward"
+                elif state == states[2]:
+                    yield "Turn Left"
+                elif state == states[3]:
+                    yield "Forward"
+                elif state == states[4]:
+                    yield "Turn Left"
+                elif state == states[5]:
+                    yield "Turn Right"
+                elif state == states[6]:
+                    yield "Turn Left"
+                elif state == states[7]:
+                    yield "Turn Left Twice"
+                    
+        def runner():
+            instruction = "Forward"
+            while True:
+                new_instruction = yield None if instruction == "Forward" else None
+                if new_instruction:
+                    instruction = new_instruction
+                if instruction == "Forward":
+                    yield move_forward()
+                elif instruction == "Turn Right":
+                    yield turn_right(1)
+                elif instruction == "Turn Left":
+                    yield turn_left(1) 
+                elif instruction == "Turn Left Twice":
+                    yield turn_left(2) 
 
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+
+
+        machine_state = action_state()
+        next(machine_state)
+        machine_run = runner()
+        next(machine_run)
+                    
+        while isinstance(send(req := Request.ExitSensor()), Request.NoExit):
+            currentState = [isinstance(send(req := sensor), Request.NoWall) for sensor in allSensors]
+            print(currentState)
+            instruction = machine_state.send(currentState)
+            machine_run.send(instruction)
+
+        print("Exit Found")
+            
+
+
+
+        
+        # Step 1. Check sensors
+        
+        # Step 2. Decide Move or Turn
+        # allSensors = [Request.FrontSensor(),
+        #               Request.RightSensor(),
+        #               Request.LeftSensor()]
+        # allMoves = [Request.Move(),
+        #             Request.TurnRight(),
+        #             Request.TurnLeft()]
+        # moveStatus = [Request.CheckMove(),
+        #               Request.CheckTurn()]
+        # allStoppers = [Request.StopMove(),
+        #                 Request.StopTurn()]
+                
+        # exitStatus = send(req := Request.ExitSensor())
+        # stopAll = [send(req := command) for command in allStoppers]
+        
+                
+        
+
+
+    # with connection(host=args.host, port=args.port) as send:
+    #     resp = send(req := Request.Test())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
 
         resp = send(req := Request.PowerOn())
         logger.info('Request → Response: %16r → %r', req, resp)
@@ -424,5 +506,49 @@ if __name__ == '__main__':
         resp = send(req := Request.PowerOff())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    #     resp = send(req := Request.FrontSensor())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.LeftSensor())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.RightSensor())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.ExitSensor())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.TurnLeft())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     for _ in range(4):
+    #         sleep(1)
+
+    #         resp = send(req := Request.CheckTurn())
+    #         logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.StopTurn())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.TurnRight())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     for _ in range(4):
+    #         sleep(1)
+
+    #         resp = send(req := Request.CheckTurn())
+    #         logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.StopTurn())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.Move())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     sleep(1)
+
+    #     resp = send(req := Request.CheckMove())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
+
+    #     resp = send(req := Request.StopMove())
+    #     logger.info('Request → Response: %16r → %r', req, resp)
