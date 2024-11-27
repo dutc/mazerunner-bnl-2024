@@ -364,98 +364,6 @@ if __name__ == '__main__':
         sleep(.1)
 
 
-    def test_connection_command(client):
-        while True:
-            yield client(Request.Test())
-
-
-    def move_unit_command(client, units):
-        yield client(Request.Move())
-        resp = client(Request.CheckMove())
-        while resp.distance < units:
-            yield (resp := client(Request.CheckMove()))
-        yield client(Request.StopMove())
-
-
-    def turn_left_command(client, turns):
-        yield client(Request.TurnLeft())
-        resp = client(Request.CheckTurn())
-        while resp.turns < turns:
-            yield (resp := client(Request.CheckTurn()))
-        yield client(Request.StopTurn())
-
-
-    def turn_right_command(client, turns):
-        yield client(Request.TurnRight())
-        resp = client(Request.CheckTurn())
-        while resp.turns < turns:
-            yield (resp := client(Request.CheckTurn()))
-        yield client(Request.StopTurn())
-
-
-    def check_exit_command(client):
-        while True:
-            yield client(Request.ExitSensor())
-
-
-    def check_wall_command(client):
-        while True:
-            yield client(Request.FrontSensor())
-
-
-    def test_connection(client):
-        for test in test_connection_command(client):
-            if isinstance(test, Response.Error):
-                raise Exception
-            elif isinstance(test, Response.TestSuccess):
-                logger.info("Connection successful")
-                return True
-            else:
-                return False
-
-
-    def move_unit(client, units=1):
-        for move in move_unit_command(client, units):
-            if isinstance(move, Response.Error):
-                raise Exception
-
-
-    def turn_left(client, turns=1):
-        for left in turn_left_command(client, turns):
-            if isinstance(left, Response.Error):
-                raise Exception
-
-
-    def turn_right(client, turns=1):
-        for right in turn_right_command(client, turns):
-            if isinstance(right, Response.Error):
-                raise Exception
-
-
-    def check_wall(client):
-        for status in check_wall_command(client):
-            if isinstance(status, Response.Error):
-                raise Exception
-            elif isinstance(status, Response.Wall):
-                return True
-            else:
-                return False
-
-
-    def check_exit(client):
-        for status in check_exit_command(client):
-            if isinstance(status, Response.Error):
-                raise Exception
-            elif isinstance(status, Response.Exit):
-                return True
-            else:
-                return False
-
-
-    def turnaround(client):
-        turn_right(client, 2)
-
-
     def directions():
         rotation = { "up":    (-1, 0),
                      "left":  ( 0,-1),
@@ -549,34 +457,115 @@ if __name__ == '__main__':
                 self.path_trace.pop()
 
 
-    def power_on_command(client):
-        while True:
-            yield client(Request.PowerOn())
+    class RobotCommands():
+        def __init__(self, robot_sleep):
+            self.robot_sleep = robot_sleep
 
+        @staticmethod
+        def power_on():
+            return Request.PowerOn()
 
-    def power_on(client):
-        for status in power_on_command(client):
-            if isinstance(status, Response.Error):
-                raise Exception
-            elif isinstance(status, Response.PoweredOn):
+        @staticmethod
+        def power_off():
+            return Request.PowerOff()
+
+        @staticmethod
+        def check_exit(resp=None):
+            return Request.ExitSensor()
+
+        @staticmethod
+        def exit_reached(resp=None):
+            if isinstance(resp, Response.Exit):
                 return True
-            else:
-                return False
+            return False
 
+        @staticmethod
+        def check_wall():
+            return Request.FrontSensor()
 
-    def power_off_command(client):
-        while True:
-            yield client(Request.PowerOff())
-
-
-    def power_off(client):
-        for status in power_off_command(client):
-            if isinstance(status, Response.Error):
-                raise Exception
-            elif isinstance(status, Response.PoweredOff):
+        @staticmethod
+        def wall_hit(resp=None):
+            if isinstance(resp, Response.Wall):
                 return True
+            return False
+
+        @staticmethod
+        def test_connection():
+            return Request.Test()
+
+        def move_unit(self, units=1):
+            yield Request.Move()
+            resp = yield Request.CheckMove()
+            while resp.distance < units:
+                yield Sleep(self.robot_sleep)
+                resp = yield Request.CheckMove()
+            yield Request.StopMove()
+
+        def turn_left(self, turns=1):
+            yield Request.TurnLeft()
+            resp = yield Request.CheckTurn()
+            while resp.turns < turns:
+                yield Sleep(self.robot_sleep)
+                resp = yield Request.CheckTurn()
+            yield Request.StopTurn()
+
+        def turn_right(self, turns=1):
+            yield Request.TurnRight()
+            resp = yield Request.CheckTurn()
+            while resp.turns < turns:
+                yield Sleep(self.robot_sleep)
+                resp = yield Request.CheckTurn()
+            yield Request.StopTurn()
+
+        def turnaround(self):
+            yield from self.turn_right(2)
+
+
+    class Sleep:
+        def __init__(self, delay):
+            self.delay = delay
+
+
+    def RobotSolver(Robot, Commands):
+        while True:
+            resp = yield Commands.check_exit()
+            if Commands.exit_reached(resp):
+                while True:
+                    yield "Maze Completed"
+            resp = yield Commands.check_wall()
+
+            if not Commands.wall_hit(resp) and not Robot.check_history(*Robot.check_move()):
+                logger.info("Moving...")
+                Robot.move_robot(1)
+                Robot.add_history(*Robot.position(), turns=0)
+                yield from Commands.move_unit(1)
             else:
-                return False
+                logger.info("Encountered a wall or already-seen cell, try turning...")
+                logger.info("Turning left...")
+                Robot.change_direction(1)
+                yield from Commands.turn_left()
+
+                if Robot.turns_history[-1] >= 4:
+                    logger.info(f"Tried every direction at {Robot.position()} - backtracking...")
+                    # use right turns when backtracking to level the wear on gears somewhat
+                    if Robot.turning == "left":
+                        Robot.reverse_turn = True
+
+                    logger.info("Turning back...")
+                    Robot.change_direction(2)
+                    yield from Commands.turnaround()
+
+                    logger.info("Moving back...")
+                    Robot.move_robot(1)
+                    yield from Commands.move_unit(1)
+
+                    logger.info("Resetting direction...")
+                    Robot.change_direction(2)
+                    yield from Commands.turnaround()
+
+                    if Robot.turning == "right":
+                        Robot.reverse_turn = True
+                    Robot.backtrack()
 
 
     from functools import wraps
@@ -584,68 +573,53 @@ if __name__ == '__main__':
         @wraps(func)
         def inner(*args, **kwargs):
             try:
-                status = func(*args, **kwargs)
-            except Exception as e:
-                if not power_on(args[0]):
-                    raise Exception("Failed to power on...") from e
-                status = func(*args, **kwargs)
-            if status == True:
+                resp = func(*args, **kwargs)
+            except Exception as e_outer:
+                status = func(args[0], Request.PowerOn())
+                if not isinstance(status, Response.PoweredOn):
+                    raise Exception from e_outer
+                resp = func(*args, **kwargs)
+            if isinstance(resp, Response.Exit):
                 logger.info("Powering off...")
-                if not power_off(args[0]):
+                status = func(args[0], Request.PowerOff())
+                if not isinstance(status, Response.PoweredOff):
                     raise Exception("Failed to power off...")
                 logger.info("Powered off...")
-            return status
+            return resp
         return inner
 
 
     @manage_power
-    def RobotSolver(client, Robot):
-        if check_exit(client):
-            return True
-        elif not check_wall(client) and not Robot.check_history(*Robot.check_move()):
-            move_unit(client, 1)
-            logger.info("Moving...")
-            Robot.move_robot(1)
-            Robot.add_history(*Robot.position(), turns=0)
-        else:
-            logger.info("Encountered a wall or already-seen cell, try turning...")
-            turn_left(client)
-            logger.info("Turning left...")
-            Robot.change_direction(1)
-
-            if Robot.turns_history[-1] >= 4:
-                logger.info(f"Tried every direction at {Robot.position()} - backtracking...")
-                # use right turns when backtracking to level the wear on gears somewhat
-                if Robot.turning == "left":
-                    Robot.reverse_turn = True
-
-                turnaround(client)
-                logger.info("Turning back...")
-                Robot.change_direction(2)
-
-                move_unit(client, 1)
-                logger.info("Moving back...")
-                Robot.move_robot(1)
-
-                turnaround(client)
-                logger.info("Resetting direction...")
-                Robot.change_direction(2)
-
-                if Robot.turning == "right":
-                    Robot.reverse_turn = True
-                Robot.backtrack()
-        return False
+    def command_runner(client, req):
+        if isinstance(resp := client(req), Response.Error):
+            logger.debug(f"Received Error response for request: {req}")
+            raise Exception
+        logger.debug(f"Sending request: {req} -> Receiving response {resp}")
+        return resp
 
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
-        test_connection(send)
 
         Robot = RobotState(0,0)
         Robot.visited.add(Robot.position())
+        Commands = RobotCommands(0.002)
+        Solution = RobotSolver(Robot, Commands)
+        next_step = next(Solution)
+        resp = command_runner(send, Commands.test_connection())
+        #resp = command_runner(send, Commands.power_on()) ### Remove
 
-        while not RobotSolver(send, Robot):
-            logger.debug("Current robot position is: {Robot.position()}")
+        while True:
+            match next_step:
+                case Request():
+                    resp = command_runner(send, next_step)
+                case Sleep():
+                    sleep(next_step.delay)
+                    logger.debug(f"Sleeping for {next_step.delay}")
+                case "Maze Completed":
+                    break
+            next_step = Solution.send(resp)
+            logger.debug(f"Current robot position is: {Robot.position()}")
 
         logger.info("Maze complete.")
 
