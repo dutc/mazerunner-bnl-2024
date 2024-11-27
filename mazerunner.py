@@ -7,7 +7,7 @@ from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from functools import cached_property
+from functools import cached_property, wraps
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
 from os import kill
@@ -408,6 +408,14 @@ if __name__ == '__main__':
         resp = yield Request.ExitSensor()
         return isinstance(resp, Response.Exit)
 
+    def power_handler(solver):
+        @wraps(solver)
+        def inner():
+            yield Request.PowerOn()
+            yield from solver()
+            yield Request.PowerOff()
+        return inner
+
     def solve_maze():
         """Generate instructions for guiding the robot through the maze."""
         while not (yield from at_exit()):
@@ -428,9 +436,15 @@ if __name__ == '__main__':
                 yield from turn(distance=2*Direction.RIGHT)
 
     with connection(host=args.host, port=args.port) as send_to_robot:
-        solver = solve_maze()
-        resp = None
+        solver = solve_maze
+        # Apply pre-processors
+        mutators = [power_handler]
+        for decorate in mutators:
+            solver = decorate(solver)
+        solver = solver()
         
+        resp = None
+
         while True:
             try:
                 resp = send_to_robot(solver.send(resp))
@@ -438,14 +452,14 @@ if __name__ == '__main__':
                 logger.info("Sweet freedom!")
                 break
 
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        # resp = send(req := Request.StopMove())
+        # logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        # resp = send(req := Request.PowerOn())
+        # logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        # resp = send(req := Request.PowerOff())
+        # logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        # resp = send(req := Request.FrontSensor())
+        # logger.info('Request → Response: %16r → %r', req, resp)
