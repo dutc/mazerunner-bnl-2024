@@ -577,7 +577,7 @@ if __name__ == '__main__':
             except Exception as e_outer:
                 status = func(args[0], Request.PowerOn())
                 if not isinstance(status, Response.PoweredOn):
-                    raise Exception from e_outer
+                    raise Exception("Failed to power on...") from e_outer
                 resp = func(*args, **kwargs)
             if isinstance(resp, Response.Exit):
                 logger.info("Powering off...")
