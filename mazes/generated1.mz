@@ -1,0 +1,57 @@
+### generated maze ###
+# * = exit
+# @ = robot
+# x = wall
+
+x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x 
+x @ . . . . . . . x . . . . . x . . . . . . . . . . . . . . . . . x . . . . . x . . x . . . . . . . . . . . . . . x . . . . . x . . . . . x . . x . . x 
+x . . x x x x x x x x x x . . x x x x . . x . . x x x x . . x x x x x x x . . x . . x . . x x x x . . x . . x . . x x x x . . x . . x . . x . . x . . x 
+x . . . . . x . . . . . x . . x . . x . . x . . x . . x . . . . . x . . x . . . . . . . . . . . x . . x . . x . . . . . . . . . . . x . . x . . . . . x 
+x x x x . . x x x x . . x . . x . . x x x x . . x . . x . . x x x x . . x . . x x x x . . x . . x . . x . . x . . x x x x . . x . . x . . x . . x x x x 
+x . . . . . . . . . . . . . . x . . . . . . . . x . . x . . x . . . . . . . . . . . x . . x . . x . . x . . x . . x . . . . . x . . x . . x . . . . . x 
+x x x x . . x x x x x x x x x x x x x . . x . . x . . x x x x . . x x x x x x x x x x x x x x x x x x x x x x . . x x x x x x x . . x x x x . . x x x x 
+x . . . . . . . . . . . x . . x . . . . . x . . x . . . . . x . . . . . . . . x . . x . . x . . x . . . . . . . . x . . . . . x . . . . . x . . x . . x 
+x x x x x x x . . x x x x . . x x x x x x x . . x . . x . . x x x x x x x x x x . . x . . x . . x x x x x x x . . x . . x x x x x x x x x x . . x . . x 
+x . . . . . . . . . . . . . . x . . . . . x . . . . . x . . x . . . . . . . . . . . x . . x . . . . . . . . . . . x . . x . . . . . . . . . . . . . . x 
+x x x x . . x . . x x x x . . x . . x x x x . . x x x x . . x . . x . . x . . x x x x . . x x x x x x x x x x . . x . . x x x x . . x . . x x x x x x x 
+x . . x . . x . . x . . . . . x . . . . . x . . . . . x . . . . . x . . x . . . . . x . . . . . x . . . . . x . . . . . . . . x . . x . . x . . . . . x 
+x . . x . . x x x x x x x . . x x x x . . x x x x . . x x x x x x x . . x . . x . . x . . x x x x . . x x x x x x x x x x . . x . . x x x x . . x x x x 
+x . . . . . . . . x . . . . . x . . . . . x . . . . . x . . . . . . . . x . . x . . x . . . . . . . . . . . . . . . . . x . . . . . . . . . . . x . . x 
+x x x x x x x x x x . . x x x x . . x . . x x x x x x x . . x x x x . . x x x x x x x x x x . . x x x x . . x x x x . . x . . x x x x . . x . . x . . x 
+x . . . . . x . . x . . x . . x . . x . . . . . . . . x . . . . . x . . . . . . . . x . . . . . x . . . . . . . . x . . x . . . . . x . . x . . . . . x 
+x . . x x x x . . x . . x . . x x x x . . x x x x . . x x x x . . x x x x x x x x x x x x x x x x x x x x x x . . x x x x . . x x x x . . x x x x . . x 
+x . . x . . . . . . . . x . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . . . . . . . . x . . . . . . . . . . . . . . x . . x . . . . . x 
+x . . x . . x x x x x x x . . x x x x x x x x x x . . x x x x x x x . . x x x x x x x x x x . . x x x x . . x x x x x x x . . x x x x x x x x x x x x x 
+x . . . . . x . . . . . . . . x . . x . . x . . . . . x . . . . . . . . x . . . . . x . . . . . . . . x . . x . . . . . . . . . . . . . . x . . . . . x 
+x . . x x x x . . x x x x . . x . . x . . x x x x . . x x x x . . x x x x x x x . . x x x x . . x . . x x x x x x x x x x . . x x x x . . x x x x . . x 
+x . . x . . . . . x . . . . . x . . . . . x . . x . . x . . x . . . . . x . . . . . x . . . . . x . . . . . . . . . . . . . . x . . . . . . . . . . . x 
+x . . x x x x x x x . . x x x x . . x x x x . . x x x x . . x x x x . . x x x x . . x x x x x x x x x x . . x . . x . . x x x x x x x x x x x x x x x x 
+x . . . . . x . . . . . x . . . . . x . . . . . x . . . . . . . . x . . x . . . . . . . . . . . x . . . . . x . . x . . x . . . . . . . . . . . x . . x 
+x . . x . . x x x x . . x . . x . . x x x x . . x x x x . . x . . x x x x . . x x x x x x x x x x x x x x x x . . x x x x x x x . . x x x x x x x . . x 
+x . . x . . x . . . . . . . . x . . x . . . . . . . . x . . x . . . . . x . . x . . . . . x . . x . . . . . . . . . . . x . . x . . . . . . . . x . . x 
+x . . x . . x x x x . . x . . x x x x . . x . . x x x x x x x x x x . . x . . x . . x x x x . . x . . x x x x x x x x x x . . x . . x x x x . . x . . x 
+x . . x . . x . . . . . x . . . . . . . . x . . . . . . . . x . . x . . . . . . . . . . . x . . . . . x . . . . . . . . x . . . . . . . . x . . . . . x 
+x . . x x x x x x x x x x x x x x x x x x x x x x x x x . . x . . x . . x x x x . . x x x x . . x x x x . . x x x x x x x . . x x x x . . x x x x x x x 
+x . . x . . . . . . . . . . . . . . . . . . . . . . . . . . x . . . . . x . . . . . x . . x . . x . . . . . . . . x . . . . . . . . x . . . . . . . . x 
+x . . x x x x x x x . . x . . x x x x . . x . . x . . x x x x . . x x x x x x x x x x . . x . . x . . x x x x . . x . . x x x x x x x . . x x x x . . x 
+x . . x . . x . . x . . x . . . . . x . . x . . x . . . . . . . . . . . x . . x . . . . . x . . . . . . . . x . . . . . . . . . . . x . . x . . x . . x 
+x . . x . . x . . x x x x x x x x x x x x x . . x x x x x x x x x x x x x . . x x x x . . x . . x . . x x x x . . x x x x . . x x x x . . x . . x . . x 
+x . . . . . x . . . . . x . . . . . x . . . . . x . . . . . x . . . . . . . . x . . . . . . . . x . . . . . x . . . . . x . . x . . . . . . . . x . . x 
+x x x x . . x . . x . . x x x x . . x x x x . . x x x x . . x . . x . . x x x x . . x x x x . . x . . x x x x . . x . . x x x x x x x . . x x x x . . x 
+x . . x . . . . . x . . . . . . . . x . . . . . x . . . . . . . . x . . x . . . . . x . . . . . x . . . . . x . . x . . x . . . . . x . . . . . x . . x 
+x . . x . . x . . x x x x x x x x x x . . x x x x x x x . . x x x x . . x x x x x x x x x x x x x . . x . . x x x x x x x x x x . . x x x x . . x x x x 
+x . . . . . x . . . . . x . . x . . x . . . . . . . . x . . x . . x . . x . . . . . x . . . . . x . . x . . . . . . . . . . . . . . x . . . . . . . . x 
+x x x x . . x x x x x x x . . x . . x x x x x x x . . x . . x . . x . . x x x x . . x x x x . . x x x x x x x . . x x x x . . x . . x . . x x x x . . x 
+x . . . . . x . . . . . . . . . . . . . . . . . . . . . . . . . . x . . x . . . . . x . . . . . x . . x . . . . . x . . x . . x . . x . . . . . x . . x 
+x x x x . . x x x x . . x . . x . . x . . x x x x . . x x x x . . x x x x . . x x x x x x x . . x . . x . . x x x x . . x x x x x x x . . x . . x x x x 
+x . . . . . . . . . . . x . . x . . x . . x . . . . . . . . x . . x . . . . . . . . x . . x . . . . . x . . x . . . . . . . . x . . x . . x . . . . . x 
+x . . x . . x . . x . . x x x x . . x x x x x x x x x x . . x . . x x x x x x x . . x . . x x x x . . x . . x . . x . . x x x x . . x . . x . . x . . x 
+x . . x . . x . . x . . x . . . . . x . . . . . x . . x . . x . . . . . . . . x . . . . . . . . . . . . . . . . . x . . . . . x . . . . . x . . x . . x 
+x x x x x x x . . x x x x . . x x x x x x x . . x . . x x x x x x x . . x . . x . . x x x x x x x . . x . . x x x x x x x x x x x x x x x x x x x . . x 
+x . . . . . x . . x . . . . . . . . . . . . . . x . . x . . . . . x . . x . . . . . x . . . . . . . . x . . x . . . . . . . . x . . . . . . . . x . . x 
+x . . x x x x . . x x x x x x x . . x . . x x x x . . x x x x . . x . . x . . x . . x . . x x x x . . x . . x x x x x x x . . x x x x . . x x x x . . x 
+x . . . . . . . . . . . x . . x . . x . . . . . x . . x . . x . . x . . x . . x . . x . . x . . . . . x . . . . . x . . . . . . . . . . . . . . x . . x 
+x . . x x x x x x x . . x . . x x x x x x x x x x . . x . . x . . x . . x x x x . . x . . x x x x . . x x x x . . x . . x x x x x x x x x x . . x . . x 
+x . . . . . . . . x . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . . x . . x . . . . . x . . . . . x . . x . . . . . . . . . . . . . * x 
+x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x 
+
