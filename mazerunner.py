@@ -349,7 +349,8 @@ def connection(host, port):
         if not isinstance(resp, Response):
             raise TypeError(f'resp must be of type {Response} was {type(resp)}')
         return resp
-    yield send
+    try: yield send
+    finally: pass
 
 parser = ArgumentParser()
 parser.add_argument('--standalone', action='store_true', default=False, help='run mazerunner agent standalone')
@@ -384,65 +385,91 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    class Sleep(namedtuple('SleepBase', 'ticks')):
+        def __new__(cls, ticks=1):
+            return super().__new__(cls, ticks=ticks)
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    class WallSensors(namedtuple('WallSensorsBase', 'front left right')):
+        @classmethod
+        def from_responses(cls):
+            return cls(
+                front=isinstance((yield Request.FrontSensor()), Response.Wall),
+                left=isinstance((yield Request.LeftSensor()), Response.Wall),
+                right=isinstance((yield Request.RightSensor()), Response.Wall),
+            )
+    class Sensors(namedtuple('SensorsBase', 'walls exit')):
+        @classmethod
+        def from_responses(cls):
+            return cls(
+                walls=(yield from WallSensors.from_responses()),
+                exit=isinstance((yield Request.ExitSensor()), Response.Exit),
+            )
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def move_until(*, distance):
+        yield Request.Move()
+        while True:
+            yield Sleep(ticks=.5)
+            if (resp := (yield Request.CheckMove())).distance >= distance:
+                break
+        yield Request.StopMove()
+        return resp.distance == distance
+    def turn_until(*, turns):
+        while True:
+            yield Sleep(ticks=.5)
+            if (resp := (yield Request.CheckTurn())).turns >= turns:
+                break
+        yield Request.StopTurn()
+        return resp.turns == turns
+    def turn_left():
+        yield Request.TurnLeft()
+        return (yield from turn_until(turns=1))
+    def turn_right():
+        yield Request.TurnRight()
+        return (yield from turn_until(turns=1))
+    def turn_around():
+        yield Request.TurnRight()
+        return (yield from turn_until(turns=2))
 
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def autostart(plan):
+        @wraps(plan)
+        def inner(*args, **kwargs):
+            yield Request.PowerOn()
+            yield from plan(*args, **kwargs)
+            yield Request.PowerOff()
+        return inner
 
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def pchain(*plans):
+        for p in plans:
+            yield from p
 
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def simple_plan():
+        while not (sens := (yield from Sensors.from_responses())).exit:
+            match sens:
+                case Sensors(walls=WallSensors(left=False)):
+                    yield from turn_left()
+                case Sensors(walls=WallSensors(front=True, right=False)):
+                    yield from turn_right()
+                case Sensors(walls=WallSensors(front=True, left=True, right=True)):
+                    yield from turn_around()
+            yield from move_until(distance=1)
 
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def exit_plan():
+        yield Request.ExitSensor()
 
-        for _ in range(4):
-            sleep(1)
+    def preprocess(plan):
+        return autostart(lambda: pchain(plan, exit_plan()))()
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+    def run(plan, preprocessor=None):
+        with connection(host=args.host, port=args.port) as send:
+            for req in iter((lambda strat=(preprocessor if preprocessor is not None else lambda x: x)(plan): strat.send(res)), res := None):
+                match req:
+                    case Request.ExitSensor():
+                        res = send(req)
+                        if isinstance(res, Response.Exit):
+                            logger.info(f'req = %r, res = %r, maze = %r', req, res, args.maze)
+                    case Request():
+                        res = send(req)
+                    case Sleep(ticks=ticks):
+                        res = sleep(args.tick * ticks)
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    run(simple_plan(), preprocessor=preprocess)
