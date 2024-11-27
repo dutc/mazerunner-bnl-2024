@@ -384,22 +384,11 @@ if __name__ == '__main__':
         sleep(.5)
 
     ### YOUR WORK HERE ###
-    """
-    def test_maze():
-        _ = yield Request.Move()
-        while (resp := (yield Request.CheckMove())).distance < 1:
-            # sleep(args.tick)
-            pass
-        _ = yield Request.StopMove()
-    """
+    Sensors = namedtuple("Sensors", ("left", "front", "right"))
 
     def is_at_exit():
         resp = yield Request.ExitSensor()
         return isinstance(resp, Response.Exit)
-
-    def is_facing_wall():
-        resp = yield Request.FrontSensor()
-        return isinstance(resp, Response.Wall)
 
     def move():
         _ = yield Request.Move()
@@ -407,114 +396,59 @@ if __name__ == '__main__':
             resp = Request.CheckMove()
             return (yield resp)
 
-    def move_until_exit_or_wall():
-        yield from move()
-
-        while True:
-            exit_resp = (yield from is_at_exit())
-            print(f"{exit_resp = }")
-            at_wall_resp = (yield from is_facing_wall())
-            print(f"{at_wall_resp = }")
-            # if exit_resp:
-            #     break
-            # elif at_wall_resp:
-            #     break
-            if exit_resp or at_wall_resp:
-                break
+    def move_one():
+        yield Request.Move()
+        while (resp := (yield Request.CheckMove())).distance < 1:
+            pass
         yield Request.StopMove()
-        print("Am i here?")
 
+    def turn(direction, distance):
+        if direction == "left":
+            yield Request.TurnLeft()
+        if direction == "right":
+            yield Request.TurnRight()
+        else:
+            print("Unknown direction")
+        while (yield Request.CheckTurn()).turns < distance:
+            sleep(0.1)
+        yield Request.StopTurn()
+        yield from move_one()
 
-        # cont = True
-        # while cont:
-        #     at_exit = (yield from is_at_exit())
-        #     facing_wall = (yield from is_facing_wall())
-        #     cont = (not at_exit) and (not facing_wall)
-        #     print(cont)
-        #     sleep(args.tick)
-        # yield Request.StopMove()
+    def check_sensors():
+        return Sensors(
+            left = (yield Request.LeftSensor()),
+            front = (yield Request.FrontSensor()),
+            right = (yield Request.RightSensor()),
+        )
 
     def plan():
-        if (yield from is_at_exit()):
-            return
-        yield from move_until_exit_or_wall()
+        while not (yield from is_at_exit()):
+            sensors = yield from check_sensors()
+            if isinstance(sensors.left, Response.NoWall):
+                print("turn and move left")
+                yield from turn(direction="left", distance=1)
+            elif isinstance(sensors.front, Response.NoWall):
+                print("move forward")
+                yield from move_one()
+            elif isinstance(sensors.right, Response.NoWall):
+                print("turn and move right")
+                yield from turn(direction="right", distance=1)
+            else:
+                print("turn around")
+                yield from turn(direction="left", distance=2)
 
     def executor(instructions):
+        instructions = plan()
+        resp = None
         while True:
             try:
-                req = next(instructions)
+                req = instructions.send(resp)
                 resp = send(req)
                 logger.info('Request → Response: %16r → %r', req, resp)
-                sleep(args.tick)
-            except StopIteration():
+                # sleep(args.tick)
+            except StopIteration:
                 break
 
 
     with connection(host=args.host, port=args.port) as send:
-        """
-        # notes
-        solver = test_maze()
-        resp = None
-        while True:
-            try:
-                # req = next(solver)
-                req = solver.send(resp)
-                resp = send(req)
-                logger.info('Request → Response: %16r → %r', req, resp)
-                sleep(args.tick)
-            except StopIteration:
-                break
-        print(f"{send(Request.ExitSensor()) = }")
-        # end notes
-        """
-
         executor(plan())
-
-
-        # def log_send(req):
-        #     resp = send(req)
-        #     logger.info('Request → Response: %16r → %r', req, resp)
-        #     return resp
-
-        # def move_one():
-        #     log_send(Request.Move())
-        #     while True:
-        #         resp = log_send(Request.CheckMove())
-        #         if isinstance(resp, Response.MovingState) and resp.distance == 1:
-        #             break
-        #     log_send(Request.StopMove())
-
-        # def move_until_wall_or_exit():
-        #     log_send(Request.Move())
-        #     while True:
-        #         resp_front = log_send(Request.FrontSensor())
-        #         resp_exit = log_send(Request.ExitSensor())
-        #         if isinstance(resp_front, Response.Wall) or isinstance(resp_exit, Response.Exit):
-        #             break
-        #         sleep(1)
-        #     log_send(Request.StopMove())
-
-        # # Generator section
-        # def move_gen():
-        #     resp = log_send(Request.Move())
-        #     yield resp
-        #     while True:
-        #         resp = log_send(Request.CheckMove())
-        #         yield resp
-
-        # def check_front_sensor_gen():
-        #     while True:
-        #         resp = log_send(Request.FrontSensor())
-        #         yield resp
-
-        # def move_until_wall_gen():
-        #     # start moving
-        #     move_gi = move_gen()
-        #     next(move_gi)
-        #     front_sensor_gi = check_front_sensor_gen()
-        #     # Check front sensor until no wall
-        #     for reading in front_sensor_gi:
-        #         sleep(.5)
-        #         if isinstance(reading, Response.NoWall):
-        #             log_send(Request.StopMove())
-        #             break
