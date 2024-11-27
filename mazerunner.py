@@ -426,7 +426,7 @@ if __name__ == '__main__':
 
         return inner
 
-    @ensure_robot_is_on
+    # @ensure_robot_is_on
     def move_forward(distance):
         """Moves forward one square."""
         logger.debug("Moving forward 1 space.")
@@ -435,7 +435,7 @@ if __name__ == '__main__':
             resp = yield Request.CheckMove()
         _ = yield Request.StopMove()
 
-    @ensure_robot_is_on
+    # @ensure_robot_is_on
     def turn(distance=1):
         """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
         # Start the turn
@@ -452,7 +452,7 @@ if __name__ == '__main__':
         # Take another step forward to avoid spinning
         yield from move_forward(distance=1)
 
-    @ensure_robot_is_on
+    # @ensure_robot_is_on
     def read_sensors():
         return Sensors(
             left = (yield Request.LeftSensor()),
@@ -460,7 +460,7 @@ if __name__ == '__main__':
             front = (yield Request.FrontSensor()),
         )
 
-    @ensure_robot_is_on
+    # @ensure_robot_is_on
     def at_exit():
         """Report whether we are at the exit."""
         resp = yield Request.ExitSensor()
@@ -500,6 +500,14 @@ if __name__ == '__main__':
     #             # yield from solver()
     #         _ = yield Request.PowerOff()
     #     return inner
+
+    def turn_robot_on(solver):
+        @wraps(solver)
+        def inner():
+            yield Request.PowerOn()
+            yield from solver()
+            yield Request.PowerOff()
+        return inner
 
     def solve_maze():
         """Generate instructions for guiding the robot through the maze."""
@@ -548,11 +556,11 @@ if __name__ == '__main__':
     with connection(host=args.host, port=args.port) as send_to_robot:
         solver = solve_maze
         # Apply pre-processors
-        mutators = [handle_errors]
-        for decorate in mutators:
+        mutators = [turn_robot_on, handle_errors]
+        for decorate in mutators[::-1]:
             solver = decorate(solver)
         solver = solver()
-        
+
         resp = None
 
         while True:
@@ -561,15 +569,3 @@ if __name__ == '__main__':
             except StopIteration:
                 logger.info("Sweet freedom!")
                 break
-
-        # resp = send(req := Request.StopMove())
-        # logger.info('Request → Response: %16r → %r', req, resp)
-
-        # resp = send(req := Request.PowerOn())
-        # logger.info('Request → Response: %16r → %r', req, resp)
-
-        # resp = send(req := Request.PowerOff())
-        # logger.info('Request → Response: %16r → %r', req, resp)
-
-        # resp = send(req := Request.FrontSensor())
-        # logger.info('Request → Response: %16r → %r', req, resp)
