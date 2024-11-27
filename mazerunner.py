@@ -364,6 +364,11 @@ if __name__ == '__main__':
         sleep(.1)
 
 
+    def test_connection_command(client):
+        while True:
+            yield client(Request.Test())
+
+
     def move_unit_command(client, units):
         yield client(Request.Move())
         resp = client(Request.CheckMove())
@@ -388,6 +393,27 @@ if __name__ == '__main__':
         yield client(Request.StopTurn())
 
 
+    def check_exit_command(client):
+        while True:
+            yield client(Request.ExitSensor())
+
+
+    def check_wall_command(client):
+        while True:
+            yield client(Request.FrontSensor())
+
+
+    def test_connection(client):
+        for test in test_connection_command(client):
+            if isinstance(test, Response.Error):
+                raise Exception
+            elif isinstance(test, Response.TestSuccess):
+                logger.info("Connection successful")
+                return True
+            else:
+                return False
+
+
     def move_unit(client, units=1):
         for move in move_unit_command(client, units):
             if isinstance(move, Response.Error):
@@ -404,6 +430,26 @@ if __name__ == '__main__':
         for right in turn_right_command(client, turns):
             if isinstance(right, Response.Error):
                 raise Exception
+
+
+    def check_wall(client):
+        for status in check_wall_command(client):
+            if isinstance(status, Response.Error):
+                raise Exception
+            elif isinstance(status, Response.Wall):
+                return True
+            else:
+                return False
+
+
+    def check_exit(client):
+        for status in check_exit_command(client):
+            if isinstance(status, Response.Error):
+                raise Exception
+            elif isinstance(status, Response.Exit):
+                return True
+            else:
+                return False
 
 
     def turnaround(client):
@@ -505,41 +551,39 @@ if __name__ == '__main__':
 
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
-        resp_test = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp_test)
+        test_connection(send)
 
         Robot = RobotState(0,0)
         Robot.visited.add(Robot.position())
 
-        resp_exit = send(req := Request.ExitSensor())
-        while not isinstance(resp_exit, Response.Exit):
-            if not isinstance(send(Request.FrontSensor()), Response.Wall) and not Robot.check_history(*Robot.check_move()):
+        while not check_exit(send):
+            if not check_wall(send) and not Robot.check_history(*Robot.check_move()):
                 move_unit(send, 1)
-                print("Moving...")
+                logger.info("Moving...")
                 Robot.move_robot(1)
                 Robot.add_history(*Robot.position(), turns=0)
             else:
-                print("Encountered a wall or already-seen cell, try turning...")
+                logger.info("Encountered a wall or already-seen cell, try turning...")
                 turn_left(send)
-                print("Turning left...")
+                logger.info("Turning left...")
                 Robot.change_direction(1)
 
                 if Robot.turns_history[-1] >= 4:
-                    print(f"Tried every direction at {Robot.position()} - backtracking...")
+                    logger.info(f"Tried every direction at {Robot.position()} - backtracking...")
                     # use right turns when backtracking to level the wear on gears somewhat
                     if Robot.turning == "left":
                         Robot.reverse_turn = True
 
                     turnaround(send)
-                    print("Turning back...")
+                    logger.info("Turning back...")
                     Robot.change_direction(2)
 
                     move_unit(send, 1)
-                    print("Moving back...")
+                    logger.info("Moving back...")
                     Robot.move_robot(1)
 
                     turnaround(send)
-                    print("Resetting direction...")
+                    logger.info("Resetting direction...")
                     Robot.change_direction(2)
 
                     if Robot.turning == "right":
@@ -547,7 +591,6 @@ if __name__ == '__main__':
                     Robot.backtrack()
 
             logger.debug("Current robot position is: {Robot.position()}")
-            resp_exit = send(req := Request.ExitSensor())
 
-        print("Maze complete.")
+        logger.info("Maze complete.")
 
