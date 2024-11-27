@@ -390,6 +390,12 @@ if __name__ == '__main__':
         resp = yield Request.ExitSensor()
         return isinstance(resp, Response.Exit)
 
+    def power_on():
+        yield Request.PowerOn()
+
+    def power_off():
+        yield Request.PowerOff()
+
     def move():
         _ = yield Request.Move()
         while True:
@@ -421,6 +427,37 @@ if __name__ == '__main__':
             right = (yield Request.RightSensor()),
         )
 
+    def power_dec(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            yield from power_on()
+            ret = yield from func(*args, **kwargs)
+            yield from power_off()
+            return ret
+        return inner
+
+    def power_cycle_dec(num):
+        def inner(func):
+            @wraps(func)
+            def inner_inner(*args, **kwargs):
+                counter = 0
+                resp = None
+                gi = func(*args, **kwargs)
+                while True:
+                    try:
+                        message = gi.send(resp)
+                    except StopIteration:
+                        break
+                    if counter % num == 0:
+                        yield from power_off()
+                        yield from power_on()
+                    resp = yield message
+                    counter += 1
+            return inner_inner
+        return inner
+
+    @power_cycle_dec(num=5)
+    @power_dec
     def plan():
         while not (yield from is_at_exit()):
             sensors = yield from check_sensors()
