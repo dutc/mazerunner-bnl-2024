@@ -420,18 +420,22 @@ if __name__ == '__main__':
     def power_off():
         resp = yield Request.PowerOff()
 
-    def power_cycle_robot(func):
+    def start_stop_robot(func):
         def wrapper():
-            try:
-                yield from power_on()
-                yield from func()
-            except StopIteration:
-                print("stopped")
-                yield from power_off()
+            yield from power_on()
+            yield from func()
+            yield from power_off()
 
         return wrapper
+    
+    # def power_cycle_robot(func):
+    #     def wrapper():
+    #         yield from func()
 
-    @power_cycle_robot
+    #     return wrapper
+    
+
+    @start_stop_robot
     def solve_maze():
         """Generate instructions for guiding the robot through the maze."""
         while not (yield from at_exit()):
