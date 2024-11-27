@@ -384,65 +384,115 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def move():
+        yield Request.Move()
+    
+    def exit_sensor():
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def stop_move():
+        resp = yield Request.StopMove()
+        return resp
+    
+    def power_on():
+        yield Request.PowerOn()
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def power_off():
+        yield Request.PowerOff()
+    
+    from functools import wraps
 
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def power_decorator(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            yield from power_on()
+            rtn = yield from func(*args, **kwargs)
+            yield from power_off()
+            return rtn
+        return inner
 
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def power_cycle(n):
+        def inner(func):
+            @wraps(func)
+            def inner_inner(*args, **kwargs):
+                # count requests and cycle on and off every n
+                counter = 0
+                response = None
+                gen = func(*args, **kwargs)
+                while True:
+                    try:
+                        message = gen.send(response)
+                    except StopIteration:
+                        break
+                    if counter % n == n - 1:
+                        yield from power_off()
+                        yield from power_on()
+                    response = yield message
+                    counter += 1
+            return inner_inner
+        return inner
 
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    @power_decorator
+    @power_cycle(n=5)
+    def test_maze():
+        yield from move()
+        exit = False
+        while not exit:
+            exit = yield from exit_sensor()
+            sleep(args.tick)
+        yield from stop_move()
 
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
+    def run(plan):
+        with connection(host=args.host, port=args.port) as send:
+            instructions = plan()
+            response = None
+            while True:
+                try:
+                    request = instructions.send(response)
+                    response = send(request)
+                    logger.info('Request → Response: %16r → %r', request, response)
+                except StopIteration:
+                    break
 
-        for _ in range(4):
-            sleep(1)
+    run(test_maze)
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+def front_sensor():
+    resp = send(req := Request.FrontSensor())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+def check_move():
+    resp = send(req := Request.CheckMove())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
+def check_turn():
+    resp = send(req := Request.CheckTurn())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        for _ in range(4):
-            sleep(1)
+def stop_turn():
+    resp = send(req := Request.StopTurn())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
+def turn_right():
+    resp = send(req := Request.TurnRight())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+def turn_left():
+    resp = send(req := Request.TurnLeft())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
+def left_sensor():
+    resp = send(req := Request.LeftSensor())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
 
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+def right_sensor():
+    resp = send(req := Request.RightSensor())
+    logger.info('Request → Response: %16r → %r', req, resp)
+    return resp
