@@ -451,6 +451,7 @@ if __name__ == '__main__':
             self.y = y
             self.turning = "left"
             self.turns_history = [0]
+            self.path_trace = [(x,y)]
             self.visited = set()
             self.reverse_turn = reverse_turn
             self._directions = directions()
@@ -489,15 +490,17 @@ if __name__ == '__main__':
         def add_history(self, x, y, turns):
             self.visited.add((x,y))
             self.turns_history.append(turns)
+            self.path_trace.append((x,y))
 
         def check_move(self):
             return (self.x + self.x_mov, self.y + self.y_mov)
 
         def backtrack(self):
-            if not self.turns_history:
+            if not self.turns_history or not self.path_trace:
                 print("Cannot backtrack further than the starting point!")
-            elif self.turns_history:
+            elif self.turns_history and self.path_trace:
                 self.turns_history.pop()
+                self.path_trace.pop()
 
 
     ### YOUR WORK HERE ###
