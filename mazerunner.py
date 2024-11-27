@@ -403,6 +403,19 @@ if __name__ == '__main__':
             yield client(Request.FrontSensor())
 
 
+    from functools import wraps
+    def manage_power(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            power_on(args[0])
+            status = func(*args, **kwargs)
+            if status == True:
+                power_off(args[0])
+                logger.info("Powering off...")
+            return status
+        return inner
+
+
     def test_connection(client):
         for test in test_connection_command(client):
             if isinstance(test, Response.Error):
@@ -549,6 +562,91 @@ if __name__ == '__main__':
                 self.path_trace.pop()
 
 
+    def power_on_command(client):
+        while True:
+            yield client(Request.PowerOn())
+
+
+    def power_on(client):
+        for status in power_on_command(client):
+            if isinstance(status, Response.Error):
+                raise Exception
+            elif isinstance(status, Response.PoweredOn):
+                return True
+            else:
+                return False
+
+
+    def power_off_command(client):
+        while True:
+            yield client(Request.PowerOff())
+
+
+    def power_off(client):
+        for status in power_off_command(client):
+            if isinstance(status, Response.Error):
+                raise Exception
+            elif isinstance(status, Response.PoweredOff):
+                return True
+            else:
+                return False
+
+
+    from functools import wraps
+    def manage_power(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            if not power_on(args[0]):
+                raise Exception("Failed to power on...")
+            status = func(*args, **kwargs)
+            if status == True:
+                logger.info("Powering off...")
+                if not power_off(args[0]):
+                    raise Exception("Failed to power off...")
+                logger.info("Powered off...")
+            return status
+        return inner
+
+
+    @manage_power
+    def RobotSolver(client, Robot):
+        if check_exit(client):
+            return True
+        elif not check_wall(client) and not Robot.check_history(*Robot.check_move()):
+            move_unit(client, 1)
+            logger.info("Moving...")
+            Robot.move_robot(1)
+            Robot.add_history(*Robot.position(), turns=0)
+        else:
+            logger.info("Encountered a wall or already-seen cell, try turning...")
+            turn_left(client)
+            logger.info("Turning left...")
+            Robot.change_direction(1)
+
+            if Robot.turns_history[-1] >= 4:
+                logger.info(f"Tried every direction at {Robot.position()} - backtracking...")
+                # use right turns when backtracking to level the wear on gears somewhat
+                if Robot.turning == "left":
+                    Robot.reverse_turn = True
+
+                turnaround(client)
+                logger.info("Turning back...")
+                Robot.change_direction(2)
+
+                move_unit(client, 1)
+                logger.info("Moving back...")
+                Robot.move_robot(1)
+
+                turnaround(client)
+                logger.info("Resetting direction...")
+                Robot.change_direction(2)
+
+                if Robot.turning == "right":
+                    Robot.reverse_turn = True
+                Robot.backtrack()
+        return False
+
+
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
         test_connection(send)
@@ -556,40 +654,7 @@ if __name__ == '__main__':
         Robot = RobotState(0,0)
         Robot.visited.add(Robot.position())
 
-        while not check_exit(send):
-            if not check_wall(send) and not Robot.check_history(*Robot.check_move()):
-                move_unit(send, 1)
-                logger.info("Moving...")
-                Robot.move_robot(1)
-                Robot.add_history(*Robot.position(), turns=0)
-            else:
-                logger.info("Encountered a wall or already-seen cell, try turning...")
-                turn_left(send)
-                logger.info("Turning left...")
-                Robot.change_direction(1)
-
-                if Robot.turns_history[-1] >= 4:
-                    logger.info(f"Tried every direction at {Robot.position()} - backtracking...")
-                    # use right turns when backtracking to level the wear on gears somewhat
-                    if Robot.turning == "left":
-                        Robot.reverse_turn = True
-
-                    turnaround(send)
-                    logger.info("Turning back...")
-                    Robot.change_direction(2)
-
-                    move_unit(send, 1)
-                    logger.info("Moving back...")
-                    Robot.move_robot(1)
-
-                    turnaround(send)
-                    logger.info("Resetting direction...")
-                    Robot.change_direction(2)
-
-                    if Robot.turning == "right":
-                        Robot.reverse_turn = True
-                    Robot.backtrack()
-
+        while not RobotSolver(send, Robot):
             logger.debug("Current robot position is: {Robot.position()}")
 
         logger.info("Maze complete.")
