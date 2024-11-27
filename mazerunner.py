@@ -6,7 +6,7 @@ from atexit import register as atexit_register
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import cached_property
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
@@ -282,6 +282,8 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
                             if self.state is AgentState.TurningLeft or self.state is AgentState.TurningRight:
                                 self.state = None
                                 resp = Response.TurningStop()
+                        #case Request.CheckPower():
+                        #
                         case Request.CheckMove() if self.power is AgentPower.On:
                             if self.state is AgentState.Moving:
                                 resp = Response.MovingState(abs(array(self.prev_location) - array(self.location)).sum())
@@ -370,183 +372,123 @@ if __name__ == '__main__':
         sleep(.1)
 
     ### YOUR WORK HERE ###
-    with connection(host=args.host, port=args.port) as send:
-        state = EngineState.STOPPED
-        while True:
-            # Check if done
-            resp = send(req := Request.ExitSensor())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            if resp == Message.Exit():
-                logger.info('Victory!!!!!')
-                break
+
+    class Direction(IntEnum):
+        LEFT = -1
+        RIGHT = 1
+
+    Sensors = namedtuple("Sensors", ('left', 'right', 'front'))
 
 
-            resp = send(req := Request.CheckMove())
-            logger.info('Request → Response: %16r → %r', req, resp)
-            if isinstance(resp, Message.MovingState):
-                #print('here1')
-                state = EngineState.MOVING
+    def move_forward(distance):
+        """Moves forward one square."""
+        logger.debug("Moving forward 1 space.")
+        resp = yield Request.Move()
+        while getattr(resp, "distance", 0) < distance:
+            resp = yield Request.CheckMove()
+        resp = yield Request.StopMove()
+
+    def turn(distance=1):
+        """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
+        # Start the turn
+        if distance * Direction.RIGHT > 0:
+            logger.debug(f"Turning left {abs(distance)} step.")
+            resp = yield Request.TurnRight()
+        elif distance * Direction.LEFT > 0:
+            logger.debug(f"Turning right {abs(distance)} step.")
+            resp = yield Request.TurnLeft()
+        # Wait for the turn to complete
+        while (resp := (yield Request.CheckTurn())).turns < abs(distance):
+            pass
+        yield Request.StopTurn()
+        # Take another step forward to avoid spinning
+        yield from move_forward(distance=1)
+
+    def read_sensors():
+        return Sensors(
+            left = (yield Request.LeftSensor()),
+            right = (yield Request.RightSensor()),
+            front = (yield Request.FrontSensor()),
+        )
+
+    def at_exit():
+        """Report whether we are at the exit."""
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
+
+    def power_on():
+        resp = yield Request.PowerOn()
+
+    def power_off():
+        resp = yield Request.PowerOff()
+
+    def manage_power(interval = None):
+
+        def dec(func):
+            def inner():
+                if interval == None:
+                    yield from power_on()
+                    yield from func()
+                    yield from power_off()
+                else:
+                    yield from power_on()
+                    gen = func()
+                    leave = False
+                    while not leave:
+                        #yield from power_off()
+                        yield from power_on()
+                        for _ in range(interval):
+                            try:
+                                #yield gen
+                                a = next(gen)  # need to use send...
+                                print(a)
+                                yield a
+                            except StopIteration:
+                                yield from power_off()
+                                leave = True
+                                break
+            return inner
+        return dec
+
+    @manage_power(interval = 100)
+    def solve_maze():
+        """Generate instructions for guiding the robot through the maze."""
+        while not (yield from at_exit()):
+            # See which direction we can go
+            sensors = yield from read_sensors()
+            if isinstance(sensors.left, Response.NoWall):
+                # We can turn left
+                yield from turn(distance=Direction.LEFT)
+            elif isinstance(sensors.front, Response.NoWall):
+                # We can move forward
+                yield from move_forward(distance=1)
+            elif isinstance(sensors.right, Response.NoWall):
+                # We can turn right
+                yield from turn(distance=Direction.RIGHT)
             else:
-                resp = send(req := Request.CheckTurn())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                if isinstance(resp, Message.TurningState):# or isinstance(resp, Message.TurnRight):
-                    state = EngineState.TURNING
-                else:
-                    state = EngineState.STOPPED
-            # If not moving, check state of the environment and respond
-            #if not type(resp) == type(Message.MovingState(1)):
-            logger.info(f'State = {state}')
+                # Dead-end, guess we have to go backwards
+                logger.debug("Turning around.")
+                yield from turn(distance=2*Direction.RIGHT)
 
-            if state == EngineState.STOPPED:
-                resp = send(req := Request.FrontSensor())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                if resp == Message.NoWall():
-                    resp = send(req := Request.Move())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-                else:
-                    resp = send(req := Request.LeftSensor())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-                    if resp == Message.NoWall():
-                        resp = send(req := Request.TurnLeft())
-                        logger.info('Request → Response: %16r → %r', req, resp)
-                    else:
-                        resp = send(req := Request.RightSensor())
-                        logger.info('Request → Response: %16r → %r', req, resp)
-                        if resp == Message.NoWall():
-                            resp = send(req := Request.TurnRight())
-                            logger.info('Request → Response: %16r → %r', req, resp)
-                        else:
-                            resp = send(req := Request.TurnLeft())
-                            logger.info('Request → Response: %16r → %r', req, resp)
+    with connection(host=args.host, port=args.port) as send_to_robot:
+        solver = solve_maze()
+        resp = None
 
-            if state == EngineState.TURNING:
-                resp = send(req := Request.FrontSensor())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                if resp == Message.NoWall():
-                    resp = send(req := Request.StopTurn())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-                    resp = send(req := Request.Move())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-
-            if state == EngineState.MOVING:
-                resp = send(req := Request.FrontSensor())
-                logger.info('Request → Response: %16r → %r', req, resp)
-                if resp == Message.Wall():
-                    resp = send(req := Request.StopMove())
-                    logger.info('Request → Response: %16r → %r', req, resp)
-
-           #resp = send(req := Request.FrontSensor())
-           #logger.info('Request → Response: %16r → %r', req, resp)
-           #if resp == Message.NoWall():
-           #    resp = send(req := Request.Move())
-           #    logger.info('Request → Response: %16r → %r', req, resp)
-           #else:
-           #    resp = send(req := Request.CheckTurn())
-           #    if not isinstance(resp, Message.TurnLeft):
-           #    #if not type(resp) == type(Message.TurningState(1)):
-           #        resp = send(req := Request.LeftSensor())
-           #        logger.info('Request → Response: %16r → %r', req, resp)
-           #        if resp == Message.NoWall():
-           #            resp = send(req := Request.TurnLeft())
-           #            logger.info('Request → Response: %16r → %r', req, resp)
-           #        else:
-           #            resp = send(req := Request.RightSensor())
-           #            logger.info('Request → Response: %16r → %r', req, resp)
-           #            if resp == Message.NoWall():
-           #                resp = send(req := Request.TurnRight())
-           #                logger.info('Request → Response: %16r → %r', req, resp)
-           #            else:
-           #                resp = send(req := Request.TurnLeft())
-           #                logger.info('Request → Response: %16r → %r', req, resp)
-           #    else:
-           #        resp = send(req := Request.FrontSensor())
-           #        logger.info('Request → Response: %16r → %r', req, resp)
-           #        if resp == Message.NoWall():
-           #            print('Here')
-           #            resp = send(req := Request.StopTurn())
-           #            logger.info('Request → Response: %16r → %r', req, resp)
-           #            resp = send(req := Request.Move())
-           #            logger.info('Request → Response: %16r → %r', req, resp)
-
-            sleep(1)
-
-           # if state == EngineState.STOPPED:
-           #     resp = send(req := Request.FrontSensor())
-           #     logger.info('Request → Response: %16r → %r', req, resp)
-           #
-
-
-           # resp = send(req := Request.CheckMove())
-           # logger.info('Request → Response: %16r → %r', req, resp)
-           #
-           # resp = send(req := Request.CheckMove())
-           # logger.info('Request → Response: %16r → %r', req, resp)
-
-           # if not type(resp) == type(Message.MovingState(1)):
-           #     resp = send(req := Request.Move())
-           #     logger.info('Request → Response: %16r → %r', req, resp)
-
-           # sleep(1)
-
-    if False:
-        resp = send(req := Request.Test())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+        while True:
+            try:
+                resp = send_to_robot(solver.send(resp))
+            except StopIteration:
+                logger.info("Sweet freedom!")
+                break
+        if False:
+            resp = send(req := Request.StopMove())
             logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
+            resp = send(req := Request.PowerOn())
             logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+            resp = send(req := Request.PowerOff())
+            logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+            resp = send(req := Request.FrontSensor())
+            logger.info('Request → Response: %16r → %r', req, resp)
