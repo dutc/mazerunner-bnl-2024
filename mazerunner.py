@@ -391,8 +391,18 @@ if __name__ == '__main__':
             yield from power_off()
             return rtn
         return inner
+    
+    def power_cycle(n):
+        def inner(func):
+            @wraps(func)
+            def inner_inner(*args, **kwargs):
+                # count requests and cycle on and off every n
+                return func(*args, **kwargs)
+            return inner_inner
+        return inner
 
     @power_decorator
+    @power_cycle(n=5)
     def test_maze():
         yield from move()
         exit = False
@@ -400,6 +410,7 @@ if __name__ == '__main__':
             exit = yield from exit_sensor()
             sleep(args.tick)
         yield from stop_move() 
+
 
     with connection(host=args.host, port=args.port) as send:
         instructions = test_maze()
