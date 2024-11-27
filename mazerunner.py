@@ -7,7 +7,7 @@ from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, wraps
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
 from os import kill
@@ -433,9 +433,45 @@ if __name__ == '__main__':
             logger.info('Request → Response: %16r → %r', req, resp)
         return resp
 
+      
+
+    def intercept_plan(plan):
+        @wraps(plan)
+        def inner(*args, **kwargs):
+            gi = plan(*args, **kwargs)
+            counter = 0
+            step_counter = 0
+            last_move = 0
+            resp = None
+            while True:
+                try:
+                    req = gi.send(resp)
+                except StopIteration:
+                    logger.info(f"Robot moved {step_counter} steps")
+                    return
+                if isinstance(req, Request.TurnLeft):
+                    counter += 1
+                    logger.info(f"{req} : {counter}")
+                if counter >= 2:
+                    yield from send_command(Request.PowerOff)
+                    yield from send_command(Request.PowerOn)
+                    counter = 0
+                try:
+                    resp = yield req
+                except Exception as e:
+                    logger.exception("We're on fire! (This is fine)", e)
+                    resp = gi.throw(e)
+                if isinstance(resp, Response.MovingState):
+                    last_move = resp.distance
+                if isinstance(resp, Response.MovingStop):
+                    step_counter += last_move
+                    last_move = 0
+                
+        return inner
+    
     def turn_dir_once(direction):
         yield from send_command(direction)
-        turn_resp = yield from send_command(Request.CheckTurn, quiet=True)
+        turn_resp = yield from send_command(Request.CheckTurn)
         while turn_resp.turns < 1:
             turn_resp = yield from send_command(Request.CheckTurn, quiet=True)
         yield from send_command(Request.CheckTurn)
@@ -457,22 +493,35 @@ if __name__ == '__main__':
             resp = yield from send_command(Request.CheckMove, quiet=True)        
         yield from send_command(Request.CheckMove)
         yield from send_command(Request.StopMove)
+
+    def power_cycle(plan):
+        @wraps(plan)
+        def inner(*args, **kwargs):
+            resp = yield from send_command(Request.PowerOn)
+            yield from plan(*args, **kwargs)
+            resp = yield from send_command(Request.PowerOff)
+        return inner
         
+    @power_cycle
+    @intercept_plan
     def gen_solve_maze():
         while True:
-            resp = yield from send_command(Request.ExitSensor, quiet=True)
-            if isinstance(resp, Response.Exit):
-                logger.info("Found exit!")
-                break
-            resp = yield from send_command(Request.RightSensor, quiet=True)
-            if isinstance(resp, Response.NoWall):
-                yield from turn_dir_and_move_forward(Request.TurnRight)
-            else:
-                resp = yield from send_command(Request.FrontSensor, quiet=True)
+            try:
+                resp = yield from send_command(Request.ExitSensor, quiet=True)
+                if isinstance(resp, Response.Exit):
+                    logger.info("Found exit!")
+                    break
+                resp = yield from send_command(Request.RightSensor, quiet=True)
                 if isinstance(resp, Response.NoWall):
-                    yield from move_forward_by_one()
+                    yield from turn_dir_and_move_forward(Request.TurnRight)
                 else:
-                    yield from turn_dir_and_move_forward(Request.TurnLeft)
+                    resp = yield from send_command(Request.FrontSensor, quiet=True)
+                    if isinstance(resp, Response.NoWall):
+                        yield from move_forward_by_one()
+                    else:
+                        yield from turn_dir_and_move_forward(Request.TurnLeft)
+            except Exception as e:
+                logger.exception("I handled it!")
         return 123
     
     with connection(host=args.host, port=args.port) as send:
@@ -483,15 +532,12 @@ if __name__ == '__main__':
         while True:
             try:
                 resp = send(gen.send(resp))
+                if isinstance(resp, Response.Error):
+                    resp = gen.throw(Exception("Fire"))
             except StopIteration as e:
                 print(e.value)
                 break
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+
