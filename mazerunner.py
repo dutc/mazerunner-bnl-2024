@@ -7,7 +7,8 @@ from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
+from itertools import cycle, chain, repeat
+from functools import cached_property, wraps
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
 from os import kill
@@ -19,6 +20,7 @@ from socket import socket, AF_INET, SOCK_STREAM
 from sys import exit
 from textwrap import dedent, indent
 from time import sleep
+from typing import Generator
 from types import SimpleNamespace
 
 from numpy import array, full, ndarray
@@ -140,7 +142,15 @@ def render_maze(maze : Maze | ndarray):
     for row in maze:
         yield [tile.value for tile in row]
 
-def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
+def pumped(coro):
+    @wraps(coro)
+    def inner(*args, **kwargs):
+        ci = coro(*args, **kwargs)
+        next(ci)
+        return ci
+    return inner
+
+def agent_process(*, host, port, maze, seed, errors, tick, power_cycle_freq):
     rnd = Random(seed)
 
     maze = Maze.from_file(maze)
@@ -157,11 +167,12 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
         state : AgentState
         location : tuple[int, int]
         maze : Maze
+
+        power_cycle : Generator
         power : AgentPower = AgentPower.Off
-        power_cycle : int = None
 
         tick : int = 1
-        total_ticks : int = 1
+        total_ticks : int = 0
 
         prev_location : tuple[int, int] = None
         num_turns : int = 0
@@ -197,10 +208,10 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
         async def __call__(self):
             maze = self.maze.maze
             while True:
+                if (shutdown := self.power_cycle.send((self.power, self.state, self.total_ticks))):
+                    self.power = AgentPower.Off
+                    self.state = None
                 if self.power is AgentPower.On:
-                    if self.power_cycle is not None and self.total_ticks % self.power_cycle == 0:
-                        self.power = AgentPower.Off
-                        self.state = None
                     match self.state:
                         case AgentState.Moving:
                             old_loc = self.location
@@ -219,8 +230,8 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
                             next(self._turn_right)
                 tick = rnd.uniform(.5 * self.tick, 1.5 * self.tick) if errors else self.tick
                 logger.debug(
-                    'Robot: tick=%f, total_ticks=%d, power_cycle=%r, location=%r, angle=%r, state=%r, power=%r, @exit?=%r',
-                    tick, self.total_ticks, self.power_cycle, self.location, next(self._hold).angle, self.state, self.power, maze[self.location] is Tile.Exit,
+                    'Robot: tick=%f, total_ticks=%d, shutdown=%r, location=%r, angle=%r, state=%r, power=%r, @exit?=%r',
+                    tick, self.total_ticks, shutdown, self.location, next(self._hold).angle, self.state, self.power, maze[self.location] is Tile.Exit,
                 )
                 self.total_ticks += 1
                 await aio_sleep(tick)
@@ -306,7 +317,16 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
             return handler
 
     async def server(maze):
-        ag = Agent(maze=maze, state=None, location=maze.start, tick=tick, power_cycle=power_cycle)
+        ag = Agent(
+            maze=maze,
+            state=None,
+            location=maze.start,
+            tick=tick,
+            power_cycle=
+                pumped(lambda: (x for x in repeat(False)))()
+                if power_cycle_freq is None else
+                pumped(lambda: (x for x in cycle(chain(repeat(False, power_cycle_freq-1), [True]))))(),
+        )
         server = await start_server(ag.handler, host, port)
         for name in {sock.getsockname() for sock in server.sockets}:
             logger.debug('Serving on: %r', name)
@@ -339,7 +359,7 @@ parser.add_argument('--port', type=int, default=8855, help='TCP port for mazerun
 parser.add_argument('--maze', required=True, type=Path, help='path to maze')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--tick', type=float, default=1, help='tick speed')
-parser.add_argument('--power-cycle', type=int, default=None, help='power cycle frequency')
+parser.add_argument('--power-cycle-freq', type=int, default=None, help='power cycle frequency')
 parser.add_argument('-v', '--verbose', action='count', default=0, help='increase logging verbosity')
 
 if __name__ == '__main__':
@@ -349,7 +369,7 @@ if __name__ == '__main__':
     agent_kwargs= {
         'host': args.host, 'port': args.port,
         'maze': args.maze, 'seed': args.seed, 'errors': args.errors,
-        'tick': args.tick, 'power_cycle': args.power_cycle,
+        'tick': args.tick, 'power_cycle_freq': args.power_cycle_freq,
     }
     if args.standalone:
         exit(agent_process(**agent_kwargs))
