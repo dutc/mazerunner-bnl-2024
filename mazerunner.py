@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from functools import cached_property, wraps
+from itertools import count
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
 from os import kill
@@ -64,7 +65,7 @@ class Response(Message):
         setattr(Request, cls.__name__, cls)
         super().__init_subclass__()
 for msg in dedent('''
-    PowerOn PowerOff
+    PowerOn PowerOff CheckPower
     Move StopMove CheckMove
     TurnLeft TurnRight StopTurn CheckTurn
     FrontSensor LeftSensor RightSensor ExitSensor Test
@@ -251,6 +252,11 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
                                 continue
 
                     match req:
+                        case Request.CheckPower():
+                            resp = {
+                                AgentPower.On: Response.PoweredOn(),
+                                AgentPower.Off: Response.PoweredOff(),
+                            }[self.power]                        
                         case Request.PowerOn():
                             self.power = AgentPower.On
                             resp = Response.PoweredOn()
@@ -371,15 +377,65 @@ if __name__ == '__main__':
 
     Sensors = namedtuple("Sensors", ('left', 'right', 'front'))
 
+    # def retry_on_failure(plan):
+    #     num_retries = 3
+    #     @wraps(plan)
+    #     def inner(*args, **kwargs):
+    #         last_exc = None
+    #         for i in range(num_retries):
+    #             try:
+    #                 logger.debug(f"Attempt {i} for {plan}.")
+    #                 retval = yield from plan(*args, **kwargs)
+    #             except RobotError as exc:
+    #                 last_exc = exc
+    #                 logger.debug(f"Plan {plan} failed.")
+    #             else:
+    #                 break
+    #         else:
+    #             if last_exc is not None:
+    #                 raise last_exc
+    #         return retval
+    #     return inner
 
+    # def ensure_robot_is_on():
+    #     robot_was_off = isinstance((yield Request.CheckPower()), Response.PoweredOff)
+    #     if robot_was_off:
+    #         logger.debug("Turning robot back on")
+    #         _ = yield Request.PowerOn()
+    #     else:
+    #         logger.debug("Robot was already on")
+    #     return robot_was_off
+
+    def ensure_robot_is_on(solver):
+        @wraps(solver)
+        def inner():
+            while True:
+                resp = None
+                plan = solver()
+                try:
+                    req = plan.send(resp)
+                except StopIteration:
+                    break
+                try:
+                    resp = yield req
+                except RobotOff:
+                    raise  # <- loops forever if you remove this, WIP...
+                    logger.info("Turning the robot back on!")
+                    _ = yield Request.PowerOn()
+                    continue
+
+        return inner
+
+    @ensure_robot_is_on
     def move_forward(distance):
         """Moves forward one square."""
         logger.debug("Moving forward 1 space.")
         resp = yield Request.Move()
         while getattr(resp, "distance", 0) < distance:
             resp = yield Request.CheckMove()
-        resp = yield Request.StopMove()
+        _ = yield Request.StopMove()
 
+    @ensure_robot_is_on
     def turn(distance=1):
         """Turn the robot, *direction* is clockwise (1) or anti-clockwise (-1)."""
         # Start the turn
@@ -390,12 +446,13 @@ if __name__ == '__main__':
             logger.debug(f"Turning right {abs(distance)} step.")
             resp = yield Request.TurnLeft()
         # Wait for the turn to complete
-        while (resp := (yield Request.CheckTurn())).turns < abs(distance):
+        while getattr((resp := (yield Request.CheckTurn())), "turns", 0) < abs(distance):
             pass
         yield Request.StopTurn()
         # Take another step forward to avoid spinning
         yield from move_forward(distance=1)
 
+    @ensure_robot_is_on
     def read_sensors():
         return Sensors(
             left = (yield Request.LeftSensor()),
@@ -403,18 +460,46 @@ if __name__ == '__main__':
             front = (yield Request.FrontSensor()),
         )
 
+    @ensure_robot_is_on
     def at_exit():
         """Report whether we are at the exit."""
         resp = yield Request.ExitSensor()
         return isinstance(resp, Response.Exit)
 
-    def power_handler(solver):
-        @wraps(solver)
-        def inner():
-            yield Request.PowerOn()
-            yield from solver()
-            yield Request.PowerOff()
-        return inner
+    class RobotError(RuntimeError):
+        """Attempted robot request did not succeed."""
+
+    class RobotOff(RobotError):
+        """Attempted to perform an action while the robot is off."""
+
+    # def power_handler(solver):
+    #     @wraps(solver)
+    #     def inner():
+    #         plan = solver()
+    #         resp = yield Request.CheckPower()
+    #         _ = yield Request.PowerOn()
+    #         resp = None
+    #         # Do the actual plan
+    #         while True:
+    #             try:
+    #                 req = plan.send(resp)
+    #             except StopIteration:
+    #                 break
+    #             resp = yield req
+    #             logger.debug(f"{req} -> {resp}")
+    #             if isinstance(resp, Error):
+    #                 # Error, check if the robot was off?
+    #                 robot_was_off = yield from ensure_robot_is_on()
+    #                 # Retry the request if the robot was off
+    #                 if robot_was_off:
+    #                     logger.debug(f"Retrying request: {req}")
+    #                     resp = yield req
+    #                 else:
+    #                     plan.throw(RobotError(resp))
+    #             # Make sure the *resp* is the right response (Error(), MoveStatus())
+    #             # yield from solver()
+    #         _ = yield Request.PowerOff()
+    #     return inner
 
     def solve_maze():
         """Generate instructions for guiding the robot through the maze."""
@@ -435,10 +520,35 @@ if __name__ == '__main__':
                 logger.debug("Turning around.")
                 yield from turn(distance=2*Direction.RIGHT)
 
+    def robot_is_on():
+        return isinstance((yield Request.CheckPower()), Response.PowerOn)
+
+    def handle_errors(solver):
+        @wraps(solver)
+        def inner():
+            plan = solver()
+            resp = None
+            while True:
+                try:
+                    req = plan.send(resp)
+                except StopIteration:
+                    break
+                resp = yield req
+                if isinstance(resp, Error):
+                    # Why did the robot error
+                    if not (yield from robot_is_on()):
+                        exc = RobotOff(req)
+                    else:
+                        # Unknown exception, so report what we know
+                        exc = RobotError(req)
+                    plan.throw(exc)
+        return inner
+
+
     with connection(host=args.host, port=args.port) as send_to_robot:
         solver = solve_maze
         # Apply pre-processors
-        mutators = [power_handler]
+        mutators = [handle_errors]
         for decorate in mutators:
             solver = decorate(solver)
         solver = solver()
