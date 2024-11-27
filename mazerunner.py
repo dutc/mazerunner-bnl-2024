@@ -7,7 +7,7 @@ from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, wraps
 from logging import getLogger, basicConfig, DEBUG, INFO
 from multiprocessing import Process
 from os import kill
@@ -76,7 +76,7 @@ class Response(Message):
 for msg in (
     dedent(
         """
-    PowerOn PowerOff
+    PowerOn PowerOff CheckPower
     Move StopMove CheckMove
     TurnLeft TurnRight StopTurn CheckTurn
     FrontSensor LeftSensor RightSensor ExitSensor Test
@@ -311,6 +311,11 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle):
                         case Request.PowerOff():
                             self.power = AgentPower.Off
                             resp = Response.PoweredOff()
+                        case Request.CheckPower():
+                            resp = {
+                                AgentPower.On: Response.PoweredOn(),
+                                AgentPower.Off: Response.PoweredOff(),
+                            }[self.power]
                         case Request.Test():
                             resp = Response.TestSuccess()
                         case Request.Move() if self.power is AgentPower.On:
@@ -486,8 +491,24 @@ if __name__ == "__main__":
     ### YOUR WORK HERE ###
     with connection(host=args.host, port=args.port) as send:
 
+        resp = send(req := Request.CheckPower())
+        logger.info("Request → Response: %16r → %r", req, resp)
         resp = send(req := Request.PowerOn())
         logger.info("Request → Response: %16r → %r", req, resp)
+        resp = send(req := Request.CheckPower())
+        logger.info("Request → Response: %16r → %r", req, resp)
+
+        # def power_manager(runner, power_cycle=None):
+        #     @wraps(runner)
+        #     def wrapper(*args, **kwargs):
+        #         yield Request.PowerOn()
+        #         for i, task in enumerate(runner(*args, **kwargs)):
+        #             if power_cycle and i % power_cycle == 0:
+        #                 yield Request.PowerOff()
+        #                 yield Request.PowerOn()
+        #             yield task
+        #         yield Request.PowerOff()
+        #     return wrapper
 
         def move_forward():
             resp = send(req := Request.Move())
