@@ -430,7 +430,19 @@ if __name__ == '__main__':
         yield Request.TurnRight()
         return (yield from turn_until(turns=2))
 
-    def simple_strategy():
+    def autostart(plan):
+        @wraps(plan)
+        def inner(*args, **kwargs):
+            yield Request.PowerOn()
+            yield from plan(*args, **kwargs)
+            yield Request.PowerOff()
+        return inner
+
+    def pchain(*plans):
+        for p in plans:
+            yield from p
+
+    def simple_plan():
         while not (sens := (yield from Sensors.from_responses())).exit:
             match sens:
                 case Sensors(walls=WallSensors(left=False)):
@@ -441,12 +453,23 @@ if __name__ == '__main__':
                     yield from turn_around()
             yield from move_until(distance=1)
 
-    with connection(host=args.host, port=args.port) as send:
-        send(Request.PowerOn())
-        for req in iter((lambda strat=simple_strategy(): strat.send(res)), res := None):
-            match req:
-                case Request():
-                    res = send(req)
-                case Sleep(ticks=ticks):
-                    res = sleep(args.tick * ticks)
-        logger.info(f'ExitSensor() = %r, maze = %r', send(Request.ExitSensor()), args.maze)
+    def exit_plan():
+        yield Request.ExitSensor()
+
+    def preprocess(plan):
+        return autostart(lambda: pchain(plan, exit_plan()))()
+
+    def run(plan, preprocessor=None):
+        with connection(host=args.host, port=args.port) as send:
+            for req in iter((lambda strat=(preprocessor if preprocessor is not None else lambda x: x)(plan): strat.send(res)), res := None):
+                match req:
+                    case Request.ExitSensor():
+                        res = send(req)
+                        if isinstance(res, Response.Exit):
+                            logger.info(f'req = %r, res = %r, maze = %r', req, res, args.maze)
+                    case Request():
+                        res = send(req)
+                    case Sleep(ticks=ticks):
+                        res = sleep(args.tick * ticks)
+
+    run(simple_plan(), preprocessor=preprocess)
