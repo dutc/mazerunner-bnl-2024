@@ -66,7 +66,7 @@ class Response(Message):
         setattr(Request, cls.__name__, cls)
         super().__init_subclass__()
 for msg in dedent('''
-    PowerOn PowerOff
+    PowerOn PowerOff CheckPower
     Move StopMove CheckMove
     TurnLeft TurnRight StopTurn CheckTurn
     FrontSensor LeftSensor RightSensor ExitSensor Test
@@ -268,6 +268,11 @@ def agent_process(*, host, port, maze, seed, errors, tick, power_cycle_freq):
                         case Request.PowerOff():
                             self.power = AgentPower.Off
                             resp = Response.PoweredOff()
+                        case Request.CheckPower():
+                            resp = {
+                                AgentPower.On: Response.PoweredOn(),
+                                AgentPower.Off: Response.PoweredOff(),
+                            }[self.power]
                         case Request.Test():
                             resp = Response.TestSuccess()
                         case Request.Move() if self.power is AgentPower.On:
@@ -381,68 +386,162 @@ if __name__ == '__main__':
             logger.debug('Killing %d', proc.pid)
             kill(proc.pid, SIGTERM)
             proc.join()
-        sleep(.1)
+        sleep(.5)
 
     ### YOUR WORK HERE ###
+
+    from functools import wraps
+    from dataclasses import dataclass
+
+    @dataclass
+    class Sleep:
+        time: float = 0
+
+    def pumped(coro):
+        @wraps(coro)
+        def inner(*args, **kwargs):
+            ci = coro(*args, **kwargs)
+            next(ci)
+            return ci
+        return inner
+
+    def check_exit():
+        resp = yield Request.ExitSensor()
+        return isinstance(resp, Response.Exit)
+    
+    def check_wall():
+        resp = yield Request.FrontSensor()
+        return isinstance(resp, Response.Wall)
+
+    # @pumped
+    def move(n_steps=None):
+        """Move for a number of steps or until you reach a wall"""
+        pos = 0
+        if n_steps == pos:
+            return pos
+
+        resp = yield Request.Move()
+        while True:
+            yield Sleep(0.2)
+            resp = yield Request.CheckMove()
+            pos = resp.distance
+            if (n_steps is not None) and (pos >= n_steps):
+                yield Request.StopMove()
+                break
+
+            resp = yield Request.FrontSensor()
+            if isinstance(resp, Response.Wall):
+                yield Request.StopMove()
+                break
+        
+        return pos
+    
+    def turn(n_turns=None, direction='left'):
+        """Turn for a number of turns or until the front sensor is clear"""
+        pos = 0
+        if n_turns == pos:
+            return pos
+
+        resp = yield Request.TurnLeft() if direction == 'left' else Request.TurnRight()
+        while True:
+            yield Sleep(0.2)
+            resp = yield Request.CheckTurn()
+            pos = resp.turns
+            if (n_turns is not None) and (pos == n_turns):
+                yield Request.StopTurn()
+                break
+
+            resp = yield Request.FrontSensor()
+            if (pos != 2) and isinstance(resp, Response.NoWall):
+                yield Request.StopTurn()
+                break
+        
+        return pos
+
+
+    def off_and_on():
+        resp = yield Request.CheckPower()
+        if isinstance(resp, Response.PoweredOn):
+            yield Request.PowerOff()
+        yield Request.PowerOn()
+
+
+    def autostart(power_cycle=None):
+        def decorator(plan):
+            @wraps(plan)
+            def inner(*args, **kwargs):
+                # Turn on in the beginning
+                yield Request.PowerOn()
+                
+                coro = plan(*args, **kwargs)
+                resp = None
+                i = 0
+                while True:
+                    try:
+                        # Turn the power off and on every `power_cycle` iterations
+                        i += 1
+                        if i % power_cycle == 0:
+                            yield from off_and_on()
+                        
+                        # Yield the next instruction from the plan
+                        req = coro.send(resp)
+                        resp = yield req
+                        if isinstance(resp, Response.Error):
+                            yield from off_and_on()
+                            resp = yield req
+
+                    except StopIteration as e:
+                        val = e.value
+                        break
+
+                # Turn off in the end
+                yield Request.PowerOff()
+            return inner
+        return decorator
+
+    @autostart(power_cycle=13)
+    def plan():
+        if (yield from check_exit()):
+            print("Done!")
+            return "We are done here!"
+        while True:
+            # Move forward by 1 step
+            pos = yield from move(1)
+
+            if (yield from check_exit()):
+                return "We are done here!"
+
+            # If couldn't move -- turn (as much as possible)
+            if pos == 0:
+               yield from turn()
+            else:
+                # Try turning left and move there if possible, otherwise continue straight
+                yield from turn(1, direction = 'left')
+                if (yield from check_wall()):
+                    yield from turn(1, direction = 'right')
+                else:
+                    continue
+
+
     with connection(host=args.host, port=args.port) as send:
+
         resp = send(req := Request.Test())
         logger.info('Request → Response: %16r → %r', req, resp)
 
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
+        plan = plan()
+        resp = None
+        while True:
+            try:
+                req = plan.send(resp)
+                if isinstance(req, Request):
+                    resp = send(req = req)
+                    logger.info('Request    →   Response: %16r → %r', req, resp)
+                elif isinstance(req, Sleep):
+                    sleep(args.tick * req.time)
 
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.LeftSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.RightSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.ExitSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnLeft())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.TurnRight())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        for _ in range(4):
-            sleep(1)
-
-            resp = send(req := Request.CheckTurn())
-            logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopTurn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.Move())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        sleep(1)
-
-        resp = send(req := Request.CheckMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.StopMove())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOn())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.PowerOff())
-        logger.info('Request → Response: %16r → %r', req, resp)
-
-        resp = send(req := Request.FrontSensor())
-        logger.info('Request → Response: %16r → %r', req, resp)
+                # if isinstance(resp, Response.Error):
+                #     print("Caught an Error in plan.")
+                #     break
+            except StopIteration as e:
+                print(f"Finish! {e}")
+                break
